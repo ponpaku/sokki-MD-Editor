@@ -7,18 +7,20 @@ Tauri v2 ネイティブ Markdown エディタ。Flask+SocketIO から移行済�
 ```
 frontend/           # Vite + vanilla JS フロントエンド
   src/
-    main.js         # エディタ本体（ショートカット、プレビュー、スクロール同期）
+    main.js         # エディタ本体（ショートカット、プレビュー、スクロール同期、ファイル関連付け受信）
     file-ops.js     # 開く/保存/名前を付けて保存（Tauri dialog+fs）
     autosave.js     # デバウンス付き自動保存 + 起動時復元
-    export.js       # Word (.docx) / プレーンテキスト (.txt) エクスポート
+    export.js       # Word (.docx) / プレーンテキスト (.txt) / HTML エクスポート
+    export-modal.js # PDF エクスポートモーダル（html2pdf.js）
     preview-style.js # プレビューペインのスタイルカスタマイズ
     i18n.js         # 多言語対応（en/ja）
     style.css       # 全スタイル（light/darkテーマ含む）
   index.html        # エントリHTML
 src-tauri/          # Tauri Rust バックエンド
-  src/lib.rs        # アプリ初期化（dialog, fs, store プラグイン）
+  src/lib.rs        # アプリ初期化（dialog, fs, store, single-instance プラグイン + ファイル関連付け処理）
   capabilities/default.json  # パーミッション設定
-  tauri.conf.json   # Tauri設定
+  tauri.conf.json   # Tauri設定（fileAssociations 含む）
+  windows/hooks.nsh # NSIS インストーラフック（.md/.markdown レジストリ登録）
 ```
 
 ## 開発コマンド

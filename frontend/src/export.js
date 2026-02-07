@@ -286,8 +286,14 @@ export function markdownToDocx(md) {
 
 // --- Export Actions ---
 
-export async function exportDocx(md) {
+function replaceExt(filePath, newExt) {
+  if (!filePath) return undefined;
+  return filePath.replace(/\.[^.\\/]+$/, "." + newExt);
+}
+
+export async function exportDocx(md, currentPath) {
   const path = await save({
+    defaultPath: replaceExt(currentPath, "docx"),
     filters: [{ name: t("filter.word"), extensions: ["docx"] }],
   });
   if (!path) return null;
@@ -298,8 +304,9 @@ export async function exportDocx(md) {
   return path;
 }
 
-export async function exportHtml(md) {
+export async function exportHtml(md, currentPath) {
   const path = await save({
+    defaultPath: replaceExt(currentPath, "html"),
     filters: [{ name: t("filter.html"), extensions: ["html"] }],
   });
   if (!path) return null;
@@ -314,8 +321,9 @@ export async function exportHtml(md) {
   return path;
 }
 
-export async function exportTxt(md) {
+export async function exportTxt(md, currentPath) {
   const path = await save({
+    defaultPath: replaceExt(currentPath, "txt"),
     filters: [{ name: t("filter.plainText"), extensions: ["txt"] }],
   });
   if (!path) return null;

@@ -100,11 +100,33 @@ header {
 /* Editor Styles */
 #editor-pane {
     flex: 1;
-    border-right: 1px solid var(--border-pane);
+    min-width: 0;
     display: flex;
     flex-direction: column;
     height: 100%;
     background-color: var(--bg-editor);
+}
+
+/* Draggable Divider */
+#divider {
+    width: 5px;
+    cursor: col-resize;
+    background: var(--border-pane);
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+#divider:hover, #divider.dragging {
+    background: #0e639c;
+}
+
+/* Preview Wrapper */
+#preview-wrapper {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 textarea {
@@ -126,13 +148,13 @@ textarea {
 /* Preview Styles */
 #preview-pane {
     flex: 1;
+    min-height: 0;
     padding: 20px;
     padding-bottom: 50vh;
     overflow-y: auto;
     background-color: var(--bg-preview);
     color: var(--fg-preview);
     line-height: 1.6;
-    height: 100%;
 }
 
 /* Preview Style Toggle Button */

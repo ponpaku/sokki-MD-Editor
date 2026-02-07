@@ -19,8 +19,9 @@ export async function actionOpen() {
   return { path: selected, text };
 }
 
-export async function actionSaveAs(text) {
+export async function actionSaveAs(text, currentPath) {
   const path = await save({
+    defaultPath: currentPath || undefined,
     filters: fileFilters(),
   });
   if (!path) return null;

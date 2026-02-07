@@ -3,6 +3,14 @@
 速記（Shorthand）に特化した、シンプルで高速なMarkdownエディターです。
 Tauri v2 によるネイティブデスクトップアプリとして動作し、ローカルファイルの編集・保存に対応しています。
 
+## インストール
+
+[Releases](https://github.com/ponpaku/sokki-MD-Editor/releases) ページから最新のインストーラをダウンロードして実行してください。
+
+- **Windows**: `Sokki MD Editor_x.x.x_x64-setup.exe`（NSIS インストーラ）
+
+インストール後、`.md` ファイルをダブルクリックまたは右クリック →「プログラムから開く」で Sokki MD Editor を選択できます。
+
 ## 特徴的な機能（速記ショートカット）
 
 入力の手間を最小限に抑えるための独自機能が搭載されています。
@@ -14,35 +22,33 @@ Tauri v2 によるネイティブデスクトップアプリとして動作し�
     - `Shift + Enter`: 段落内で改行（`<br>`）を挿入します。
     - リストやテーブル内で `Enter` を押すと、自動的に次の行を継続します。
 - **テーブル列の追加**: テーブル内で `Ctrl + .` を押すと、その位置に新しい列をテーブル全体に追加します。
-- **テキスト装飾**: `Ctrl + B` (太字), `Ctrl + I` (斜体), `Ctrl + U` (下線) に対応。
-- **ファイル操作**: `Ctrl + O` (開く), `Ctrl + S` (保存), `Ctrl + Shift + S` (名前を付けて保存)
-- **スクロール同期**: エディターとプレビューのスクロール位置がリアルタイムで同期します。
-- **自動保存**: 編集中の内容は自動的にスナップショットとして保存され、アプリが強制終了しても復元可能です。
 
-## セットアップと起動方法
+## キーボードショートカット
 
-### 前提条件
-- [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
-- [Rust](https://www.rust-lang.org/tools/install)
-- Visual Studio 2022 の「C++ によるデスクトップ開発」ワークロード (Windows)
+| ショートカット | 操作 |
+|---|---|
+| `Ctrl + O` | ファイルを開く |
+| `Ctrl + S` | 保存 |
+| `Ctrl + Shift + S` | 名前を付けて保存 |
+| `Ctrl + B` | 太字 |
+| `Ctrl + I` | 斜体 |
+| `Ctrl + U` | 下線 |
+| `Ctrl + .` | テーブルに列を追加 |
 
-### 開発モード
-```bash
-pnpm install
-cd frontend && pnpm install && cd ..
-pnpm tauri dev
-```
+## その他の機能
 
-### プロダクションビルド
-```bash
-pnpm tauri build
-```
+- **スクロール同期**: エディターとプレビューのスクロール位置がリアルタイムで同期
+- **自動保存**: 編集中の内容は自動的にスナップショットとして保存され、アプリが強制終了しても復元可能
+- **エクスポート**: Word (.docx) / プレーンテキスト (.txt) / HTML / PDF に対応
+- **テーマ切替**: ライト / ダークテーマ
+- **多言語対応**: 日本語 / 英語
+- **プレビュースタイル**: フォントやサイズのカスタマイズ
+- **ファイル関連付け**: `.md` / `.markdown` ファイルをダブルクリックで直接開く
 
-## 技術スタック
-- **Frontend**: Vite, Vanilla JavaScript, CSS3, Marked.js
-- **Desktop**: Tauri v2 (Rust)
-- **Plugins**: @tauri-apps/plugin-dialog, @tauri-apps/plugin-fs, @tauri-apps/plugin-store
+## 開発者向け情報
+
+開発環境のセットアップについては [CLAUDE.md](./CLAUDE.md) を参照してください。
 
 ## ライセンス
+
 MIT License

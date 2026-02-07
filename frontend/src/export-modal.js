@@ -23,6 +23,7 @@ const avoidBreakCheck = document.getElementById("em-avoid-break-inside");
 const previewFrame = document.getElementById("em-preview-frame");
 
 let currentMd = "";
+let currentFilePath = null;
 let onExportDone = null;
 
 // --- CSS helpers ---
@@ -268,8 +269,14 @@ function fitPages(doc, pageW, pageH) {
 }
 
 // --- Public: open modal ---
-export function openExportModal(md) {
+function replaceExt(filePath, newExt) {
+  if (!filePath) return undefined;
+  return filePath.replace(/\.[^.\\/]+$/, "." + newExt);
+}
+
+export function openExportModal(md, currentPath) {
   currentMd = md;
+  currentFilePath = currentPath || null;
   titleEl.textContent = t("exportModal.titlePdf");
   overlay.classList.add("open");
   updatePreview();
@@ -291,6 +298,7 @@ function closeModal(result) {
 async function doExport() {
   const opts = getSettings();
   const path = await save({
+    defaultPath: replaceExt(currentFilePath, "pdf"),
     filters: [{ name: t("filter.pdf"), extensions: ["pdf"] }],
   });
   if (!path) return null;

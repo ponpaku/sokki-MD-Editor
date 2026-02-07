@@ -320,7 +320,7 @@ async function handleSave() {
 
 async function handleSaveAs() {
   try {
-    const path = await actionSaveAs(editor.value);
+    const path = await actionSaveAs(editor.value, state.currentPath);
     if (!path) return;
     state.currentPath = path;
     state.dirty = false;
@@ -348,7 +348,7 @@ btnExport.addEventListener("click", (e) => {
 async function handleExportDocx() {
   exportDropdown.classList.remove("open");
   try {
-    const path = await exportDocx(editor.value);
+    const path = await exportDocx(editor.value, state.currentPath);
     if (path) setStatus(t("status.exported", path.split(/[\\/]/).pop()));
   } catch (err) {
     console.error("Export DOCX failed:", err);
@@ -359,7 +359,7 @@ async function handleExportDocx() {
 async function handleExportTxt() {
   exportDropdown.classList.remove("open");
   try {
-    const path = await exportTxt(editor.value);
+    const path = await exportTxt(editor.value, state.currentPath);
     if (path) setStatus(t("status.exported", path.split(/[\\/]/).pop()));
   } catch (err) {
     console.error("Export TXT failed:", err);
@@ -373,7 +373,7 @@ exportTxtBtn.addEventListener("click", handleExportTxt);
 async function handleExportPdf() {
   exportDropdown.classList.remove("open");
   try {
-    const path = await openExportModal(editor.value);
+    const path = await openExportModal(editor.value, state.currentPath);
     if (path) setStatus(t("status.exported", path.split(/[\\/]/).pop()));
   } catch (err) {
     console.error("Export PDF failed:", err);
@@ -384,7 +384,7 @@ async function handleExportPdf() {
 async function handleExportHtml() {
   exportDropdown.classList.remove("open");
   try {
-    const path = await exportHtml(editor.value);
+    const path = await exportHtml(editor.value, state.currentPath);
     if (path) setStatus(t("status.exported", path.split(/[\\/]/).pop()));
   } catch (err) {
     console.error("Export HTML failed:", err);
@@ -478,6 +478,34 @@ preview.addEventListener("scroll", () => {
         percentage * (editor.scrollHeight - editor.clientHeight);
     }
   }
+});
+
+// --- Draggable Divider ---
+const divider = document.getElementById("divider");
+const editorPane = document.getElementById("editor-pane");
+const previewWrapper = document.getElementById("preview-wrapper");
+const container = document.querySelector(".container");
+
+divider.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  divider.classList.add("dragging");
+  const onMouseMove = (e) => {
+    const rect = container.getBoundingClientRect();
+    const offset = e.clientX - rect.left;
+    const total = rect.width - divider.offsetWidth;
+    const ratio = Math.max(0.1, Math.min(0.9, offset / rect.width));
+    editorPane.style.flex = "none";
+    previewWrapper.style.flex = "none";
+    editorPane.style.width = `${ratio * total}px`;
+    previewWrapper.style.width = `${(1 - ratio) * total}px`;
+  };
+  const onMouseUp = () => {
+    divider.classList.remove("dragging");
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+  };
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
 });
 
 // --- Expose for file-ops module ---
