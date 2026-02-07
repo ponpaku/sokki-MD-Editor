@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicerapp/json-schema/master/tauri/tauri.conf.json",
+  "$schema": "../gen/schemas/desktop-schema.json",
   "productName": "Sokki MD Editor",
   "version": "1.0.0",
   "identifier": "com.sokki.md-editor",
