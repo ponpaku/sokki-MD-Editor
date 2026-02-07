@@ -6,6 +6,9 @@ import { t, applyTranslations, renderHelp } from "./i18n.js";
 import { exportDocx, exportTxt, exportHtml } from "./export.js";
 import { openExportModal } from "./export-modal.js";
 import { loadSavedStyle, initPreviewStylePanel } from "./preview-style.js";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 
 // --- DOM Elements ---
 const editor = document.getElementById("editor");
@@ -487,6 +490,28 @@ export function setEditorValue(text) {
   updatePreview();
 }
 
+// --- Open file from path (file association / single-instance) ---
+async function openFileFromPath(filePath) {
+  try {
+    const text = await readTextFile(filePath);
+    editor.value = text;
+    state.currentPath = filePath;
+    state.dirty = false;
+    state.lastSavedAt = Date.now();
+    updatePreview();
+    updateTitle();
+    setStatus(t("status.opened", filePath.split(/[\\/]/).pop()));
+  } catch (err) {
+    console.error("Failed to open file from path:", err);
+    setStatus(t("status.openFailed"));
+  }
+}
+
+// --- Listen for file-open events from backend (single-instance) ---
+listen("file-open", (event) => {
+  openFileFromPath(event.payload);
+});
+
 // --- Startup: restore snapshot if available ---
 async function init() {
   applyTranslations();
@@ -496,6 +521,17 @@ async function init() {
 
   const savedTheme = localStorage.getItem("sokki-theme") || "light";
   applyTheme(savedTheme);
+
+  // Check if launched with a file argument (file association / drag-drop)
+  try {
+    const initialFile = await invoke("get_initial_file");
+    if (initialFile) {
+      await openFileFromPath(initialFile);
+      return;
+    }
+  } catch (err) {
+    console.error("get_initial_file failed:", err);
+  }
 
   try {
     const restored = await checkRestore();

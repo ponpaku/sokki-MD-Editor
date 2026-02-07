@@ -22,9 +22,17 @@
     "windows": {
       "nsis": {
         "languages": ["Japanese", "English"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
       }
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "description": "Markdown Document",
+        "mimeType": "text/markdown"
+      }
+    ]
   },
   "app": {
     "windows": [
