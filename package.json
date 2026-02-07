@@ -1,0 +1,13 @@
+{
+  "name": "sokki-markdown-editor",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

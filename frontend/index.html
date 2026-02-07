@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sokki MD Editor</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<div id="help-toggle">?</div>
+<div id="help-panel"></div>
+
+<header>
+    <div><strong>Sokki</strong> MD Editor</div>
+    <div style="display: flex; align-items: center;">
+        <div id="status" data-i18n="status.ready">Ready</div>
+        <div class="btn-group">
+            <button class="btn" id="btn-open" data-i18n="btn.open">Open</button>
+            <button class="btn" id="btn-save" data-i18n="btn.save">Save</button>
+            <button class="btn" id="btn-save-as" data-i18n="btn.saveAs">Save As</button>
+            <div class="export-wrapper">
+                <button class="btn" id="btn-export" data-i18n="btn.export">Export</button>
+                <div class="export-dropdown" id="export-dropdown">
+                    <button class="export-option" id="export-docx" data-i18n="export.word">Word (.docx)</button>
+                    <button class="export-option" id="export-txt" data-i18n="export.plainText">Plain Text (.txt)</button>
+                    <button class="export-option" id="export-pdf" data-i18n="export.pdf">PDF</button>
+                    <button class="export-option" id="export-html" data-i18n="export.html">HTML</button>
+                </div>
+            </div>
+            <button id="theme-toggle" data-i18n-title="btn.themeToggle" title="Toggle theme"></button>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    <div id="editor-pane">
+        <textarea id="editor" data-i18n-placeholder="editor.placeholder" placeholder="Type here..."></textarea>
+    </div>
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; height: 100%;">
+        <button id="preview-style-toggle" title="Preview Style">&#x1f3a8;</button>
+        <div id="preview-style-panel" class="psp-panel"></div>
+        <div id="preview-pane"></div>
+    </div>
+</div>
+
+<!-- Export Modal -->
+<div id="export-modal" class="em-overlay">
+    <div class="em-dialog">
+        <div class="em-header">
+            <h3 id="em-title" class="em-title">Export</h3>
+            <button id="em-close" class="em-close-btn">&times;</button>
+        </div>
+        <div class="em-body">
+            <div class="em-settings">
+                <div class="em-section-label" data-i18n="exportModal.pageSize">Page Size</div>
+                <select id="em-page-size" class="em-select">
+                    <option value="a4" selected>A4 (210 × 297 mm)</option>
+                    <option value="a3">A3 (297 × 420 mm)</option>
+                    <option value="b4">B4 (250 × 353 mm)</option>
+                    <option value="b5">B5 (176 × 250 mm)</option>
+                    <option value="letter">Letter (215.9 × 279.4 mm)</option>
+                    <option value="legal">Legal (215.9 × 355.6 mm)</option>
+                </select>
+                <div class="em-section-label" data-i18n="exportModal.margins">Margins (mm)</div>
+                <div class="em-margin-grid">
+                    <label><span data-i18n="exportModal.top">Top</span><input type="number" id="em-margin-top" value="15" min="0" max="100"></label>
+                    <label><span data-i18n="exportModal.right">Right</span><input type="number" id="em-margin-right" value="15" min="0" max="100"></label>
+                    <label><span data-i18n="exportModal.bottom">Bottom</span><input type="number" id="em-margin-bottom" value="15" min="0" max="100"></label>
+                    <label><span data-i18n="exportModal.left">Left</span><input type="number" id="em-margin-left" value="15" min="0" max="100"></label>
+                </div>
+                <div class="em-section-label" data-i18n="exportModal.scale">Scale (%)</div>
+                <input type="range" id="em-scale" min="50" max="200" value="100" class="em-range">
+                <div class="em-scale-value"><span id="em-scale-label">100</span>%</div>
+                <div class="em-section-label" data-i18n="exportModal.dpi">DPI (Resolution)</div>
+                <select id="em-dpi" class="em-select">
+                    <option value="1">72 DPI</option>
+                    <option value="2" selected>150 DPI</option>
+                    <option value="3">216 DPI</option>
+                    <option value="4">300 DPI</option>
+                </select>
+                <label class="em-checkbox-label">
+                    <input type="checkbox" id="em-use-preview-style" checked>
+                    <span data-i18n="exportModal.usePreviewStyle">Use preview style</span>
+                </label>
+                <label class="em-checkbox-label">
+                    <input type="checkbox" id="em-avoid-break-inside">
+                    <span data-i18n="exportModal.avoidBreakInside">Avoid breaking inside elements</span>
+                </label>
+                <div class="em-actions">
+                    <button class="em-btn em-btn-primary" id="em-export" data-i18n="exportModal.export">Export</button>
+                    <button class="em-btn em-btn-secondary" id="em-cancel" data-i18n="exportModal.cancel">Cancel</button>
+                </div>
+            </div>
+            <div class="em-preview-area">
+                <div class="em-section-label" data-i18n="exportModal.preview">Preview</div>
+                <div class="em-preview-frame-wrapper">
+                    <iframe id="em-preview-frame" class="em-preview-frame"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

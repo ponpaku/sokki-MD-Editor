@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicerapp/json-schema/master/tauri/tauri.conf.json",
+  "productName": "Sokki MD Editor",
+  "version": "1.0.0",
+  "identifier": "com.sokki.md-editor",
+  "build": {
+    "beforeDevCommand": "pnpm --dir frontend dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --dir frontend build",
+    "frontendDist": "../frontend/dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "nsis": {
+        "languages": ["Japanese", "English"],
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sokki MD Editor",
+        "width": 1200,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
