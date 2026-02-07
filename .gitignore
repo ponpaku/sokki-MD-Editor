@@ -13,5 +13,8 @@ Thumbs.db
 # IDE / tools
 .claude/
 
-# Misc
-*.png
+# Misc: root PNGs (icon source images etc.)
+/*.png
+
+# But track icon PNGs
+!src-tauri/icons/*.png
