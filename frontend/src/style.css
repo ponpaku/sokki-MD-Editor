@@ -30,6 +30,8 @@
     --fg-dropdown: #333;
     --border-dropdown: #ccc;
     --bg-dropdown-hover: #f0f0f0;
+    --border-table-header: #d0d7de;
+    --border-table-row: #d0d7de;
 }
 
 [data-theme="dark"] {
@@ -63,6 +65,8 @@
     --fg-dropdown: #d4d4d4;
     --border-dropdown: #3c3c3c;
     --bg-dropdown-hover: #3c3c3c;
+    --border-table-header: #555;
+    --border-table-row: #3c3c3c;
 }
 
 /* --- Base Styles --- */
@@ -277,6 +281,11 @@ textarea {
 #preview-pane pre { background-color: var(--bg-code); padding: 16px; overflow: auto; border-radius: 6px; }
 #preview-pane blockquote { border-left: 4px solid var(--border-blockquote); color: var(--fg-blockquote); padding-left: 1em; margin: 0; }
 #preview-pane ul, #preview-pane ol { padding-left: 2em; }
+#preview-pane img { max-width: 100%; height: auto; }
+#preview-pane table { border-collapse: collapse; width: 100%; }
+#preview-pane th, #preview-pane td { padding: 6px 13px; text-align: left; }
+#preview-pane th { border-bottom: 2px solid var(--border-table-header); }
+#preview-pane td { border-bottom: 1px solid var(--border-table-row); }
 
 /* Help Button & Panel Styles */
 #help-toggle {
