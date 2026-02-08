@@ -16,6 +16,7 @@ import {
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { t } from "./i18n.js";
+import { resolveExportImages } from "./image-resolver.js";
 
 // --- Plain Text Export ---
 
@@ -311,7 +312,7 @@ export async function exportHtml(md, currentPath) {
   });
   if (!path) return null;
 
-  const html = marked.parse(md);
+  const html = resolveExportImages(marked.parse(md), currentPath);
   const content = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">

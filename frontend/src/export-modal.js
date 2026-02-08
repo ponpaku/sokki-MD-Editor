@@ -3,6 +3,7 @@ import html2pdf from "html2pdf.js";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { t } from "./i18n.js";
+import { resolvePreviewImages } from "./image-resolver.js";
 
 // --- DOM refs ---
 const overlay = document.getElementById("export-modal");
@@ -78,7 +79,7 @@ function getSettings() {
 // --- Preview: shows scaled pages on gray background ---
 function updatePreview() {
   const opts = getSettings();
-  const html = marked.parse(currentMd);
+  const html = resolvePreviewImages(marked.parse(currentMd), currentFilePath);
   const customCss = getCustomCss(opts.usePreviewStyle);
 
   const pageW = opts.pageSize.w * MM2PX;
@@ -303,7 +304,7 @@ async function doExport() {
   });
   if (!path) return null;
 
-  const html = marked.parse(currentMd);
+  const html = resolvePreviewImages(marked.parse(currentMd), currentFilePath);
   const customCss = getCustomCss(opts.usePreviewStyle).replace(/\.page/g, "div");
 
   const htmlString = `<div style="font-family:sans-serif;line-height:1.6;color:#333;font-size:${opts.scale}%;">

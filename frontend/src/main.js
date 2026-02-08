@@ -9,6 +9,7 @@ import { loadSavedStyle, initPreviewStylePanel } from "./preview-style.js";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { resolvePreviewImages } from "./image-resolver.js";
 
 // --- DOM Elements ---
 const editor = document.getElementById("editor");
@@ -36,7 +37,8 @@ export const state = {
 
 // --- Markdown Rendering ---
 export function updatePreview() {
-  preview.innerHTML = marked.parse(editor.value);
+  const html = marked.parse(editor.value);
+  preview.innerHTML = resolvePreviewImages(html, state.currentPath);
 }
 
 // --- Status ---
