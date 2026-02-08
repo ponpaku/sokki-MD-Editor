@@ -37,8 +37,15 @@ export const state = {
 
 // --- Markdown Rendering ---
 export function updatePreview() {
-  const html = marked.parse(editor.value);
-  preview.innerHTML = resolvePreviewImages(html, state.currentPath);
+  let html = marked.parse(editor.value);
+  html = resolvePreviewImages(html, state.currentPath);
+  // チェックボックスに data-index を付与し disabled を除去
+  let cbIndex = 0;
+  html = html.replace(/<input [^>]*type="checkbox"[^>]*>/g, (match) => {
+    const checked = match.includes("checked");
+    return `<input type="checkbox" data-index="${cbIndex++}"${checked ? " checked" : ""}>`;
+  });
+  preview.innerHTML = html;
 }
 
 // --- Status ---
@@ -51,6 +58,24 @@ function markDirty() {
   updateTitle();
   scheduleSave(editor.value, state.currentPath);
 }
+
+// --- Task List Checkbox Toggle ---
+preview.addEventListener("click", (e) => {
+  if (e.target.tagName === "INPUT" && e.target.type === "checkbox" && e.target.dataset.index != null) {
+    const cbIdx = parseInt(e.target.dataset.index);
+    const text = editor.value;
+    let count = 0;
+    const newText = text.replace(/- \[([ xX])\]/g, (match, p1) => {
+      if (count++ === cbIdx) {
+        return p1.trim() === "" ? "- [x]" : "- [ ]";
+      }
+      return match;
+    });
+    editor.value = newText;
+    updatePreview();
+    markDirty();
+  }
+});
 
 // --- Help Toggle ---
 helpToggle.addEventListener("click", () => {
@@ -176,6 +201,21 @@ function handleShortcutKey(e) {
     markDirty();
     return true;
   }
+
+  // 3. Task List Shortcut ([] → - [ ] )
+  const taskMatch = textBefore.match(/\[\]$/);
+  if (taskMatch) {
+    e.preventDefault();
+    const beforeMatch = value.substring(0, start - taskMatch[0].length);
+    const afterMatch = value.substring(start);
+    const taskMarker = "- [ ] ";
+    editor.value = beforeMatch + taskMarker + afterMatch;
+    editor.selectionStart = editor.selectionEnd =
+      beforeMatch.length + taskMarker.length;
+    updatePreview();
+    markDirty();
+    return true;
+  }
   return false;
 }
 
@@ -243,8 +283,8 @@ function handleEnterKey(e) {
     }
   }
 
-  // 2. List Marker Check
-  const listRegex = /^(\s*)([-*]|\d+\.)\s/;
+  // 2. List Marker Check (includes task list: - [ ] / - [x])
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
   const match = currentLine.match(listRegex);
 
   if (match) {
@@ -266,7 +306,9 @@ function handleEnterKey(e) {
         const nextMarker = `\n${prefix}${currentNum + 1}. `;
         insertText(nextMarker);
       } else {
-        insertText("\n" + fullMarker);
+        // Task list: always continue with unchecked checkbox
+        const nextMarker = fullMarker.replace(/\[[xX]\]/, "[ ]");
+        insertText("\n" + nextMarker);
       }
     }
     updatePreview();

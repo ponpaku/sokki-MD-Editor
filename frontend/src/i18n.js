@@ -88,6 +88,8 @@ const dictionaries = {
     "help.fileOpen": "Open file:",
     "help.fileSave": "Save:",
     "help.fileSaveAs": "Save as:",
+    "help.taskList": "Task list:",
+    "help.taskListDesc": "{0} + {1}",
     "help.note": "Also supports full-width #1 and t3.",
   },
   ja: {
@@ -179,6 +181,8 @@ const dictionaries = {
     "help.fileOpen": "ファイルを開く:",
     "help.fileSave": "上書き保存:",
     "help.fileSaveAs": "名前を付けて保存:",
+    "help.taskList": "タスクリスト:",
+    "help.taskListDesc": "{0} + {1}",
     "help.note": "※全角の ＃１ や ｔ３ にも対応しています。",
   },
 };
@@ -230,6 +234,7 @@ export function renderHelp() {
     { label: t("help.heading"), desc: t("help.headingDesc", kbd("#1"), kbd("#6"), kbd("Space/Tab")) },
     { label: t("help.table"), desc: t("help.tableDesc", kbd("t1"), kbd("t9"), kbd("Space/Tab")) },
     { label: t("help.tableCol"), desc: t("help.tableColDesc", kbd("Ctrl") + " + " + kbd(".")) },
+    { label: t("help.taskList"), desc: t("help.taskListDesc", kbd("[]"), kbd("Space/Tab")) },
     { label: t("help.paragraph"), desc: t("help.paragraphDesc", kbd("Enter")) },
     { label: t("help.lineBreak"), desc: t("help.lineBreakDesc", kbd("Shift") + " + " + kbd("Enter"), `<code>&lt;br&gt;</code>`) },
     { label: t("help.listContinue"), desc: t("help.listContinueDesc", kbd("Enter")) },

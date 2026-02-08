@@ -287,6 +287,49 @@ textarea {
 #preview-pane th { border-bottom: 2px solid var(--border-table-header); }
 #preview-pane td { border-bottom: 1px solid var(--border-table-row); }
 
+/* Task List (Checkbox) Styles */
+#preview-pane ul:has(> li > input[type="checkbox"]) {
+  list-style: none;
+  padding-left: 0.5em;
+}
+#preview-pane li:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  margin: 0.2em 0;
+}
+#preview-pane input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-blockquote);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  top: 2px;
+}
+#preview-pane input[type="checkbox"]:checked {
+  background: #0e639c;
+  border-color: #0e639c;
+}
+#preview-pane input[type="checkbox"]:checked::after {
+  content: "\2713";
+  color: #fff;
+  font-size: 12px;
+  position: absolute;
+  top: -1px;
+  left: 2px;
+}
+#preview-pane input[type="checkbox"]:hover {
+  border-color: #0e639c;
+}
+#preview-pane li:has(> input[type="checkbox"]:checked) {
+  opacity: 0.7;
+  text-decoration: line-through;
+}
+
 /* Help Button & Panel Styles */
 #help-toggle {
     position: fixed;
