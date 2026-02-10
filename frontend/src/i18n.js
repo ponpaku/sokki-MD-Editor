@@ -15,6 +15,12 @@ const dictionaries = {
     "status.saveFailed": "Save failed",
     "status.saveAsFailed": "Save As failed",
     "status.restored": "Restored from snapshot",
+    "status.reloaded": "File reloaded (changed externally)",
+    // conflict dialog
+    "conflict.title": "File Changed",
+    "conflict.message": "This file has been changed by another program. Reload the file?",
+    "conflict.reload": "Reload",
+    "conflict.keep": "Keep mine",
     // title
     "title.untitled": "Untitled",
     "title.suffix": "Sokki MD Editor",
@@ -90,6 +96,10 @@ const dictionaries = {
     "help.fileSaveAs": "Save as:",
     "help.taskList": "Task list:",
     "help.taskListDesc": "{0} + {1}",
+    "help.indent": "Indent list:",
+    "help.indentDesc": "{0} on a list line",
+    "help.outdent": "Outdent list:",
+    "help.outdentDesc": "{0} on a list line",
     "help.note": "Also supports full-width #1 and t3.",
   },
   ja: {
@@ -108,6 +118,12 @@ const dictionaries = {
     "status.saveFailed": "保存に失敗しました",
     "status.saveAsFailed": "名前を付けて保存に失敗しました",
     "status.restored": "スナップショットから復元しました",
+    "status.reloaded": "ファイルを再読み込みしました（外部で変更）",
+    // conflict dialog
+    "conflict.title": "ファイルの変更",
+    "conflict.message": "このファイルは他のプログラムによって変更されました。再読み込みしますか？",
+    "conflict.reload": "再読み込み",
+    "conflict.keep": "このまま続ける",
     // title
     "title.untitled": "無題",
     "title.suffix": "Sokki MD Editor",
@@ -183,6 +199,10 @@ const dictionaries = {
     "help.fileSaveAs": "名前を付けて保存:",
     "help.taskList": "タスクリスト:",
     "help.taskListDesc": "{0} + {1}",
+    "help.indent": "リストのインデント:",
+    "help.indentDesc": "リスト行で {0}",
+    "help.outdent": "リストのアウトデント:",
+    "help.outdentDesc": "リスト行で {0}",
     "help.note": "※全角の ＃１ や ｔ３ にも対応しています。",
   },
 };
@@ -238,6 +258,8 @@ export function renderHelp() {
     { label: t("help.paragraph"), desc: t("help.paragraphDesc", kbd("Enter")) },
     { label: t("help.lineBreak"), desc: t("help.lineBreakDesc", kbd("Shift") + " + " + kbd("Enter"), `<code>&lt;br&gt;</code>`) },
     { label: t("help.listContinue"), desc: t("help.listContinueDesc", kbd("Enter")) },
+    { label: t("help.indent"), desc: t("help.indentDesc", kbd("Tab")) },
+    { label: t("help.outdent"), desc: t("help.outdentDesc", kbd("Shift") + " + " + kbd("Tab")) },
     { label: t("help.bold"), desc: kbd("Ctrl") + " + " + kbd("B") },
     { label: t("help.italic"), desc: kbd("Ctrl") + " + " + kbd("I") },
     { label: t("help.underline"), desc: kbd("Ctrl") + " + " + kbd("U") },

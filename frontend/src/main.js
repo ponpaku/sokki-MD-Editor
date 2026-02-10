@@ -6,10 +6,12 @@ import { t, applyTranslations, renderHelp } from "./i18n.js";
 import { exportDocx, exportTxt, exportHtml } from "./export.js";
 import { openExportModal } from "./export-modal.js";
 import { loadSavedStyle, initPreviewStylePanel } from "./preview-style.js";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { resolvePreviewImages } from "./image-resolver.js";
+import { startWatching, stopWatching, suppressNextChange, setExternalChangeHandler } from "./file-watcher.js";
 
 // --- DOM Elements ---
 const editor = document.getElementById("editor");
@@ -264,6 +266,95 @@ function addColumn(e) {
   return true;
 }
 
+function handleListIndent(e) {
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const value = editor.value;
+
+  // Get range of lines covered by selection
+  const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const lastLineEnd = value.indexOf("\n", end);
+  const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+  const block = value.substring(firstLineStart, blockEnd);
+  const lines = block.split("\n");
+
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
+  const hasListLine = lines.some((line) => listRegex.test(line));
+  if (!hasListLine) return false;
+
+  e.preventDefault();
+
+  let newLines;
+  let cursorDelta = 0;
+
+  if (e.shiftKey) {
+    // Outdent: remove up to 4 leading spaces from list lines
+    newLines = lines.map((line, i) => {
+      if (!listRegex.test(line)) return line;
+      const removed = line.match(/^( {1,4})/);
+      if (removed) {
+        const count = removed[1].length;
+        if (i === 0) cursorDelta = -count;
+        return line.substring(count);
+      }
+      return line;
+    });
+  } else {
+    // Indent: add 4 spaces to list lines
+    newLines = lines.map((line, i) => {
+      if (!listRegex.test(line)) return line;
+      if (i === 0) cursorDelta = 4;
+      return "    " + line;
+    });
+  }
+
+  const newBlock = newLines.join("\n");
+  editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
+
+  // Adjust cursor
+  const newStart = Math.max(firstLineStart, start + cursorDelta);
+  const newEnd = Math.max(firstLineStart, end + (newBlock.length - block.length));
+  editor.selectionStart = newStart;
+  editor.selectionEnd = newEnd;
+
+  updatePreview();
+  markDirty();
+  return true;
+}
+
+function findListContext(value, cursorPos) {
+  const textBefore = value.substring(0, cursorPos);
+  const lines = textBefore.split("\n");
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
+
+  // Start from the line before current (current line is lines[lines.length-1])
+  for (let i = lines.length - 2; i >= 0; i--) {
+    const line = lines[i];
+    const match = line.match(listRegex);
+    if (match) return match;
+    // If line ends with <br>, it's a continuation — keep searching upward
+    if (line.trimEnd().endsWith("<br>")) continue;
+    // Non-list, non-<br> line — stop
+    return null;
+  }
+  return null;
+}
+
+function findParentListItem(value, cursorPos, currentIndentLen) {
+  const textBefore = value.substring(0, cursorPos);
+  const lines = textBefore.split("\n");
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
+
+  for (let i = lines.length - 2; i >= 0; i--) {
+    const line = lines[i];
+    const match = line.match(listRegex);
+    if (match && match[1].length < currentIndentLen) {
+      return match;
+    }
+  }
+  return null;
+}
+
 function handleEnterKey(e) {
   const start = editor.selectionStart;
   const value = editor.value;
@@ -296,6 +387,25 @@ function handleEnterKey(e) {
 
     if (contentAfterMarker.length === 0) {
       const lineStart = previousNewline + 1;
+      const currentIndentLen = match[1].length;
+      // If indented, try to outdent to parent list level
+      if (currentIndentLen > 0) {
+        const parentMatch = findParentListItem(value, start, currentIndentLen);
+        if (parentMatch) {
+          let nextMarker;
+          if (parentMatch[2].match(/\d+\./)) {
+            const parentNum = parseInt(parentMatch[2]);
+            nextMarker = `${parentMatch[1]}${parentNum + 1}. `;
+          } else {
+            nextMarker = parentMatch[0].replace(/\[[xX]\]/, "[ ]");
+          }
+          editor.value = value.substring(0, lineStart) + nextMarker + value.substring(start);
+          editor.selectionStart = editor.selectionEnd = lineStart + nextMarker.length;
+          updatePreview();
+          markDirty();
+          return;
+        }
+      }
       editor.value =
         value.substring(0, lineStart) + value.substring(start);
       editor.selectionStart = editor.selectionEnd = lineStart;
@@ -314,8 +424,34 @@ function handleEnterKey(e) {
     updatePreview();
     markDirty();
   } else {
-    e.preventDefault();
-    insertText("\n\n");
+    // 3. Check if we're in a <br> continuation of a list
+    const brListMatch = findListContext(value, start);
+    if (brListMatch) {
+      e.preventDefault();
+      const contentOnLine = currentLine.trim();
+      if (contentOnLine.length === 0) {
+        // Empty continuation line — remove it and end the list
+        const lineStart = previousNewline + 1;
+        editor.value =
+          value.substring(0, lineStart) + value.substring(start);
+        editor.selectionStart = editor.selectionEnd = lineStart;
+      } else {
+        if (brListMatch[2].match(/\d+\./)) {
+          const currentNum = parseInt(brListMatch[2]);
+          const prefix = brListMatch[1];
+          const nextMarker = `\n${prefix}${currentNum + 1}. `;
+          insertText(nextMarker);
+        } else {
+          const nextMarker = brListMatch[0].replace(/\[[xX]\]/, "[ ]");
+          insertText("\n" + nextMarker);
+        }
+      }
+      updatePreview();
+      markDirty();
+    } else {
+      e.preventDefault();
+      insertText("\n\n");
+    }
   }
 }
 
@@ -339,6 +475,7 @@ async function handleOpen() {
     updatePreview();
     updateTitle();
     setStatus(t("status.opened", result.path.split(/[\\/]/).pop()));
+    await startWatching(result.path);
   } catch (err) {
     console.error("Open failed:", err);
     setStatus(t("status.openFailed"));
@@ -350,6 +487,7 @@ async function handleSave() {
     return handleSaveAs();
   }
   try {
+    suppressNextChange();
     await actionSave(state.currentPath, editor.value);
     state.dirty = false;
     state.lastSavedAt = Date.now();
@@ -364,6 +502,7 @@ async function handleSave() {
 
 async function handleSaveAs() {
   try {
+    suppressNextChange();
     const path = await actionSaveAs(editor.value, state.currentPath);
     if (!path) return;
     state.currentPath = path;
@@ -372,6 +511,7 @@ async function handleSaveAs() {
     updateTitle();
     await clearSnapshot();
     setStatus(t("status.saved", path.split(/[\\/]/).pop()));
+    await startWatching(path);
   } catch (err) {
     console.error("Save As failed:", err);
     setStatus(t("status.saveAsFailed"));
@@ -472,7 +612,11 @@ editor.addEventListener("keydown", (e) => {
     }
   }
 
-  if (e.key === "Tab" || e.key === " ") {
+  if (e.key === "Tab") {
+    if (handleListIndent(e)) return;
+    if (!e.shiftKey && handleShortcutKey(e)) return;
+  }
+  if (e.key === " ") {
     if (handleShortcutKey(e)) return;
   }
 
@@ -573,6 +717,7 @@ async function openFileFromPath(filePath) {
     updatePreview();
     updateTitle();
     setStatus(t("status.opened", filePath.split(/[\\/]/).pop()));
+    await startWatching(filePath);
   } catch (err) {
     console.error("Failed to open file from path:", err);
     setStatus(t("status.openFailed"));
@@ -594,6 +739,37 @@ async function init() {
   const savedTheme = localStorage.getItem("sokki-theme") || "light";
   applyTheme(savedTheme);
 
+  // External file change handler
+  setExternalChangeHandler(async (filePath) => {
+    try {
+      if (!state.dirty) {
+        // No unsaved changes — silently reload
+        const text = await readTextFile(filePath);
+        editor.value = text;
+        updatePreview();
+        setStatus(t("status.reloaded"));
+      } else {
+        // Unsaved changes — ask user
+        const reload = await ask(t("conflict.message"), {
+          title: t("conflict.title"),
+          kind: "warning",
+          okLabel: t("conflict.reload"),
+          cancelLabel: t("conflict.keep"),
+        });
+        if (reload) {
+          const text = await readTextFile(filePath);
+          editor.value = text;
+          state.dirty = false;
+          updatePreview();
+          updateTitle();
+          setStatus(t("status.reloaded"));
+        }
+      }
+    } catch (err) {
+      console.error("External change reload failed:", err);
+    }
+  });
+
   // Check if launched with a file argument (file association / drag-drop)
   try {
     const initialFile = await invoke("get_initial_file");
@@ -614,6 +790,7 @@ async function init() {
       updatePreview();
       updateTitle();
       setStatus(t("status.restored"));
+      if (restored.currentPath) await startWatching(restored.currentPath);
       return;
     }
   } catch (err) {
