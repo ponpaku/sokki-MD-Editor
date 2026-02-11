@@ -11,7 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { resolvePreviewImages } from "./image-resolver.js";
-import { startWatching, stopWatching, suppressNextChange, setExternalChangeHandler } from "./file-watcher.js";
+import { startWatching, stopWatching, suppressNextChange, clearSuppression, setExternalChangeHandler } from "./file-watcher.js";
 
 // --- DOM Elements ---
 const editor = document.getElementById("editor");
@@ -432,11 +432,8 @@ function handleEnterKey(e) {
       e.preventDefault();
       const contentOnLine = currentLine.trim();
       if (contentOnLine.length === 0) {
-        // Empty continuation line — remove it and end the list
-        const lineStart = previousNewline + 1;
-        editor.value =
-          value.substring(0, lineStart) + value.substring(start);
-        editor.selectionStart = editor.selectionEnd = lineStart;
+        // Empty continuation line — end the list with a paragraph break
+        insertText("\n");
       } else {
         if (brListMatch[2].match(/\d+\./)) {
           const currentNum = parseInt(brListMatch[2]);
@@ -498,6 +495,7 @@ async function handleSave() {
     setStatus(t("status.saved", state.currentPath.split(/[\\/]/).pop()));
   } catch (err) {
     console.error("Save failed:", err);
+    clearSuppression();
     setStatus(t("status.saveFailed"));
   }
 }

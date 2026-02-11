@@ -12,6 +12,10 @@ export function suppressNextChange() {
   suppressNext = true;
 }
 
+export function clearSuppression() {
+  suppressNext = false;
+}
+
 export async function startWatching(filePath) {
   await stopWatching();
   if (!filePath) return;
