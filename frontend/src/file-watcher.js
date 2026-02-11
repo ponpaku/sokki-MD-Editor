@@ -14,12 +14,14 @@ export function suppressNextChange() {
   clearTimeout(suppressTimer);
   suppressTimer = setTimeout(() => {
     suppressNext = false;
+    suppressTimer = null;
   }, 2000);
 }
 
 export function clearSuppression() {
   suppressNext = false;
   clearTimeout(suppressTimer);
+  suppressTimer = null;
 }
 
 function isContentChange(event) {
@@ -33,6 +35,8 @@ function isContentChange(event) {
 
 export async function startWatching(filePath) {
   await stopWatching();
+  clearTimeout(suppressTimer);
+  suppressTimer = null;
   suppressNext = false;
   if (!filePath) return;
 
@@ -40,8 +44,6 @@ export async function startWatching(filePath) {
     unwatchFn = await watch(filePath, (event) => {
       if (!isContentChange(event)) return;
       if (suppressNext) {
-        suppressNext = false;
-        clearTimeout(suppressTimer);
         return;
       }
       if (onExternalChange) {
