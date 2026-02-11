@@ -767,6 +767,7 @@ async function init() {
           state.dirty = false;
           updatePreview();
           updateTitle();
+          await clearSnapshot();
           setStatus(t("status.reloaded"));
         }
       }
