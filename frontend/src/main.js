@@ -747,10 +747,10 @@ async function init() {
   // External file change handler
   setExternalChangeHandler(async (filePath) => {
     try {
+      const text = await readTextFile(filePath);
+      if (filePath !== state.currentPath) return;
       if (!state.dirty) {
         // No unsaved changes — silently reload
-        const text = await readTextFile(filePath);
-        if (filePath !== state.currentPath) return;
         editor.value = text;
         updatePreview();
         setStatus(t("status.reloaded"));
@@ -764,8 +764,6 @@ async function init() {
         });
         if (filePath !== state.currentPath) return;
         if (reload) {
-          const text = await readTextFile(filePath);
-          if (filePath !== state.currentPath) return;
           editor.value = text;
           state.dirty = false;
           updatePreview();
