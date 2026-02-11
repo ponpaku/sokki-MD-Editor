@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import "./style.css";
-import { actionOpen, actionSave, actionSaveAs } from "./file-ops.js";
+import { actionOpen, actionSave, actionPickSaveAsPath } from "./file-ops.js";
 import { scheduleSave, clearSnapshot, checkRestore } from "./autosave.js";
 import { t, applyTranslations, renderHelp } from "./i18n.js";
 import { exportDocx, exportTxt, exportHtml } from "./export.js";
@@ -507,13 +507,17 @@ async function handleSave() {
 }
 
 async function handleSaveAs() {
+  let suppressedSamePathSave = false;
   try {
-    const path = await actionSaveAs(editor.value, state.currentPath);
+    const previousPath = state.currentPath;
+    const path = await actionPickSaveAsPath(previousPath);
     if (!path) return;
-    const wasWatchingSamePath = state.currentPath === path;
+    const wasWatchingSamePath = previousPath === path;
     if (wasWatchingSamePath) {
       suppressNextChange();
+      suppressedSamePathSave = true;
     }
+    await actionSave(path, editor.value);
     state.currentPath = path;
     state.dirty = false;
     state.lastSavedAt = Date.now();
@@ -525,6 +529,9 @@ async function handleSaveAs() {
     }
   } catch (err) {
     console.error("Save As failed:", err);
+    if (suppressedSamePathSave) {
+      clearSuppression();
+    }
     setStatus(t("status.saveAsFailed"));
   }
 }
