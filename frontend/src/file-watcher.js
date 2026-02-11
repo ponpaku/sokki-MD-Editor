@@ -20,7 +20,7 @@ function isContentChange(event) {
   const t = event.type;
   if (typeof t === "object") {
     if ("access" in t) return false;
-    if ("modify" in t && typeof t.modify === "object" && "metadata" in t.modify) return false;
+    if ("modify" in t && typeof t.modify === "object" && t.modify.kind === "metadata") return false;
   }
   return true;
 }
