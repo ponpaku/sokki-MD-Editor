@@ -351,10 +351,14 @@ function findParentListItem(value, cursorPos, currentIndentLen) {
 
   for (let i = lines.length - 2; i >= 0; i--) {
     const line = lines[i];
+    if (line.trim().length === 0) break;
     const match = line.match(listRegex);
     if (match && match[1].length < currentIndentLen) {
       return match;
     }
+    if (match) continue;
+    if (line.trimEnd().endsWith("<br>")) continue;
+    break;
   }
   return null;
 }
