@@ -750,6 +750,7 @@ async function init() {
       if (!state.dirty) {
         // No unsaved changes — silently reload
         const text = await readTextFile(filePath);
+        if (filePath !== state.currentPath) return;
         editor.value = text;
         updatePreview();
         setStatus(t("status.reloaded"));
@@ -761,8 +762,10 @@ async function init() {
           okLabel: t("conflict.reload"),
           cancelLabel: t("conflict.keep"),
         });
+        if (filePath !== state.currentPath) return;
         if (reload) {
           const text = await readTextFile(filePath);
+          if (filePath !== state.currentPath) return;
           editor.value = text;
           state.dirty = false;
           updatePreview();

@@ -16,6 +16,15 @@ export function clearSuppression() {
   suppressNext = false;
 }
 
+function isContentChange(event) {
+  const t = event.type;
+  if (typeof t === "object") {
+    if ("access" in t) return false;
+    if ("modify" in t && typeof t.modify === "object" && "metadata" in t.modify) return false;
+  }
+  return true;
+}
+
 export async function startWatching(filePath) {
   await stopWatching();
   suppressNext = false;
@@ -23,6 +32,7 @@ export async function startWatching(filePath) {
 
   try {
     unwatchFn = await watch(filePath, (event) => {
+      if (!isContentChange(event)) return;
       if (suppressNext) {
         suppressNext = false;
         return;
