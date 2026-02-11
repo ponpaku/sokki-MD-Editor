@@ -18,6 +18,7 @@ export function clearSuppression() {
 
 export async function startWatching(filePath) {
   await stopWatching();
+  suppressNext = false;
   if (!filePath) return;
 
   try {

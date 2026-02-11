@@ -330,14 +330,14 @@ function findListContext(value, cursorPos) {
   const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
 
   // Start from the line before current (current line is lines[lines.length-1])
+  // Each line must end with <br> to be part of the continuation chain.
   for (let i = lines.length - 2; i >= 0; i--) {
     const line = lines[i];
+    if (!line.trimEnd().endsWith("<br>")) return null;
+    // This line ends with <br> — check if it's also a list marker (origin)
     const match = line.match(listRegex);
     if (match) return match;
-    // If line ends with <br>, it's a continuation — keep searching upward
-    if (line.trimEnd().endsWith("<br>")) continue;
-    // Non-list, non-<br> line — stop
-    return null;
+    // <br> continuation but not a list marker — keep searching upward
   }
   return null;
 }
