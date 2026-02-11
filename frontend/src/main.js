@@ -273,7 +273,9 @@ function handleListIndent(e) {
 
   // Get range of lines covered by selection
   const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
-  const lastLineEnd = value.indexOf("\n", end);
+  // When selection ends at a line boundary, exclude the next line
+  const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
+  const lastLineEnd = value.indexOf("\n", adjustedEnd);
   const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
   const block = value.substring(firstLineStart, blockEnd);
   const lines = block.split("\n");
