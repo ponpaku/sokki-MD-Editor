@@ -2,6 +2,7 @@ import { watch } from "@tauri-apps/plugin-fs";
 
 let unwatchFn = null;
 let suppressNext = false;
+let suppressTimer = null;
 let onExternalChange = null;
 
 export function setExternalChangeHandler(callback) {
@@ -10,10 +11,15 @@ export function setExternalChangeHandler(callback) {
 
 export function suppressNextChange() {
   suppressNext = true;
+  clearTimeout(suppressTimer);
+  suppressTimer = setTimeout(() => {
+    suppressNext = false;
+  }, 2000);
 }
 
 export function clearSuppression() {
   suppressNext = false;
+  clearTimeout(suppressTimer);
 }
 
 function isContentChange(event) {
@@ -35,6 +41,7 @@ export async function startWatching(filePath) {
       if (!isContentChange(event)) return;
       if (suppressNext) {
         suppressNext = false;
+        clearTimeout(suppressTimer);
         return;
       }
       if (onExternalChange) {
