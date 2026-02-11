@@ -309,6 +309,8 @@ function handleListIndent(e) {
   }
 
   const newBlock = newLines.join("\n");
+  if (newBlock === block) return true;
+
   editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
 
   // Adjust cursor
@@ -502,16 +504,21 @@ async function handleSave() {
 
 async function handleSaveAs() {
   try {
-    suppressNextChange();
     const path = await actionSaveAs(editor.value, state.currentPath);
     if (!path) return;
+    const wasWatchingSamePath = state.currentPath === path;
+    if (wasWatchingSamePath) {
+      suppressNextChange();
+    }
     state.currentPath = path;
     state.dirty = false;
     state.lastSavedAt = Date.now();
     updateTitle();
     await clearSnapshot();
     setStatus(t("status.saved", path.split(/[\\/]/).pop()));
-    await startWatching(path);
+    if (!wasWatchingSamePath) {
+      await startWatching(path);
+    }
   } catch (err) {
     console.error("Save As failed:", err);
     setStatus(t("status.saveAsFailed"));
