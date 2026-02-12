@@ -15,6 +15,12 @@ const dictionaries = {
     "status.saveFailed": "Save failed",
     "status.saveAsFailed": "Save As failed",
     "status.restored": "Restored from snapshot",
+    "status.reloaded": "File reloaded (changed externally)",
+    // conflict dialog
+    "conflict.title": "File Changed",
+    "conflict.message": "This file has been changed by another program. Reload the file?",
+    "conflict.reload": "Reload",
+    "conflict.keep": "Keep mine",
     // title
     "title.untitled": "Untitled",
     "title.suffix": "Sokki MD Editor",
@@ -70,6 +76,11 @@ const dictionaries = {
     "restore.cancel": "Discard",
     // help panel
     "help.title": "Sokki MD Editor — Help",
+    "help.groupQuick": "Quick Input",
+    "help.groupList": "List Editing",
+    "help.groupTable": "Table Editing",
+    "help.groupFormat": "Text Format",
+    "help.groupApp": "History & File",
     "help.heading": "Heading:",
     "help.headingDesc": "{0} to {1} + {2}",
     "help.table": "Create table:",
@@ -88,8 +99,24 @@ const dictionaries = {
     "help.fileOpen": "Open file:",
     "help.fileSave": "Save:",
     "help.fileSaveAs": "Save as:",
+    "help.undo": "Undo:",
+    "help.redo": "Redo:",
+    "help.listToggle": "Toggle list type:",
+    "help.listToggleDesc": "{0} + {1} + {2}",
+    "help.listAutoFormat": "Auto format list:",
+    "help.listAutoFormatDesc": "{0} + {1} + {2}",
+    "help.tableRowAdd": "Add table row:",
+    "help.tableRowAddDesc": "In a table, {0} + {1}",
+    "help.tableCellMove": "Move table cell:",
+    "help.tableCellMoveDesc": "In a table, {0} / {1}",
+    "help.tableRowDelete": "Delete empty table row:",
+    "help.tableRowDeleteDesc": "In a table, {0}",
     "help.taskList": "Task list:",
     "help.taskListDesc": "{0} + {1}",
+    "help.indent": "Indent list:",
+    "help.indentDesc": "{0} on a list line",
+    "help.outdent": "Outdent list:",
+    "help.outdentDesc": "{0} on a list line",
     "help.note": "Also supports full-width #1 and t3.",
   },
   ja: {
@@ -108,6 +135,12 @@ const dictionaries = {
     "status.saveFailed": "保存に失敗しました",
     "status.saveAsFailed": "名前を付けて保存に失敗しました",
     "status.restored": "スナップショットから復元しました",
+    "status.reloaded": "ファイルを再読み込みしました（外部で変更）",
+    // conflict dialog
+    "conflict.title": "ファイルの変更",
+    "conflict.message": "このファイルは他のプログラムによって変更されました。再読み込みしますか？",
+    "conflict.reload": "再読み込み",
+    "conflict.keep": "このまま続ける",
     // title
     "title.untitled": "無題",
     "title.suffix": "Sokki MD Editor",
@@ -163,6 +196,11 @@ const dictionaries = {
     "restore.cancel": "破棄する",
     // help panel
     "help.title": "Sokki MD Editor 使い方",
+    "help.groupQuick": "クイック入力",
+    "help.groupList": "リスト操作",
+    "help.groupTable": "表操作",
+    "help.groupFormat": "文字装飾",
+    "help.groupApp": "履歴・ファイル",
     "help.heading": "見出し:",
     "help.headingDesc": "{0}〜{1} + {2}",
     "help.table": "表の作成:",
@@ -181,8 +219,24 @@ const dictionaries = {
     "help.fileOpen": "ファイルを開く:",
     "help.fileSave": "上書き保存:",
     "help.fileSaveAs": "名前を付けて保存:",
+    "help.undo": "元に戻す:",
+    "help.redo": "やり直し:",
+    "help.listToggle": "リスト種別切替:",
+    "help.listToggleDesc": "{0} + {1} + {2}",
+    "help.listAutoFormat": "リスト自動整形:",
+    "help.listAutoFormatDesc": "{0} + {1} + {2}",
+    "help.tableRowAdd": "表の行追加:",
+    "help.tableRowAddDesc": "表内で {0} + {1}",
+    "help.tableCellMove": "表セル移動:",
+    "help.tableCellMoveDesc": "表内で {0} / {1}",
+    "help.tableRowDelete": "空の表行を削除:",
+    "help.tableRowDeleteDesc": "表内で {0}",
     "help.taskList": "タスクリスト:",
     "help.taskListDesc": "{0} + {1}",
+    "help.indent": "リストのインデント:",
+    "help.indentDesc": "リスト行で {0}",
+    "help.outdent": "リストのアウトデント:",
+    "help.outdentDesc": "リスト行で {0}",
     "help.note": "※全角の ＃１ や ｔ３ にも対応しています。",
   },
 };
@@ -230,27 +284,69 @@ export function renderHelp() {
   const panel = document.getElementById("help-panel");
   if (!panel) return;
 
-  const items = [
-    { label: t("help.heading"), desc: t("help.headingDesc", kbd("#1"), kbd("#6"), kbd("Space/Tab")) },
-    { label: t("help.table"), desc: t("help.tableDesc", kbd("t1"), kbd("t9"), kbd("Space/Tab")) },
-    { label: t("help.tableCol"), desc: t("help.tableColDesc", kbd("Ctrl") + " + " + kbd(".")) },
-    { label: t("help.taskList"), desc: t("help.taskListDesc", kbd("[]"), kbd("Space/Tab")) },
-    { label: t("help.paragraph"), desc: t("help.paragraphDesc", kbd("Enter")) },
-    { label: t("help.lineBreak"), desc: t("help.lineBreakDesc", kbd("Shift") + " + " + kbd("Enter"), `<code>&lt;br&gt;</code>`) },
-    { label: t("help.listContinue"), desc: t("help.listContinueDesc", kbd("Enter")) },
-    { label: t("help.bold"), desc: kbd("Ctrl") + " + " + kbd("B") },
-    { label: t("help.italic"), desc: kbd("Ctrl") + " + " + kbd("I") },
-    { label: t("help.underline"), desc: kbd("Ctrl") + " + " + kbd("U") },
-    { label: t("help.fileOpen"), desc: kbd("Ctrl") + " + " + kbd("O") },
-    { label: t("help.fileSave"), desc: kbd("Ctrl") + " + " + kbd("S") },
-    { label: t("help.fileSaveAs"), desc: kbd("Ctrl") + " + " + kbd("Shift") + " + " + kbd("S") },
+  const sections = [
+    {
+      title: t("help.groupQuick"),
+      items: [
+        { label: t("help.heading"), desc: t("help.headingDesc", kbd("#1"), kbd("#6"), kbd("Space/Tab")) },
+        { label: t("help.table"), desc: t("help.tableDesc", kbd("t1"), kbd("t9"), kbd("Space/Tab")) },
+        { label: t("help.taskList"), desc: t("help.taskListDesc", kbd("[]"), kbd("Space/Tab")) },
+        { label: t("help.paragraph"), desc: t("help.paragraphDesc", kbd("Enter")) },
+        { label: t("help.lineBreak"), desc: t("help.lineBreakDesc", kbd("Shift") + " + " + kbd("Enter"), `<code>&lt;br&gt;</code>`) },
+        { label: t("help.listContinue"), desc: t("help.listContinueDesc", kbd("Enter")) },
+      ],
+    },
+    {
+      title: t("help.groupList"),
+      items: [
+        { label: t("help.indent"), desc: t("help.indentDesc", kbd("Tab")) },
+        { label: t("help.outdent"), desc: t("help.outdentDesc", kbd("Shift") + " + " + kbd("Tab")) },
+        { label: t("help.listToggle"), desc: t("help.listToggleDesc", kbd("Ctrl"), kbd("Shift"), kbd("7")) },
+        { label: t("help.listAutoFormat"), desc: t("help.listAutoFormatDesc", kbd("Ctrl"), kbd("Shift"), kbd("L")) },
+      ],
+    },
+    {
+      title: t("help.groupTable"),
+      items: [
+        { label: t("help.tableCol"), desc: t("help.tableColDesc", kbd("Ctrl") + " + " + kbd(".")) },
+        { label: t("help.tableRowAdd"), desc: t("help.tableRowAddDesc", kbd("Ctrl"), kbd("Enter")) },
+        { label: t("help.tableCellMove"), desc: t("help.tableCellMoveDesc", kbd("Tab"), kbd("Shift") + " + " + kbd("Tab")) },
+        { label: t("help.tableRowDelete"), desc: t("help.tableRowDeleteDesc", kbd("Backspace")) },
+      ],
+    },
+    {
+      title: t("help.groupFormat"),
+      items: [
+        { label: t("help.bold"), desc: kbd("Ctrl") + " + " + kbd("B") },
+        { label: t("help.italic"), desc: kbd("Ctrl") + " + " + kbd("I") },
+        { label: t("help.underline"), desc: kbd("Ctrl") + " + " + kbd("U") },
+      ],
+    },
+    {
+      title: t("help.groupApp"),
+      items: [
+        { label: t("help.undo"), desc: kbd("Ctrl") + " + " + kbd("Z") },
+        { label: t("help.redo"), desc: kbd("Ctrl") + " + " + kbd("Shift") + " + " + kbd("Z") + " / " + kbd("Ctrl") + " + " + kbd("Y") },
+        { label: t("help.fileOpen"), desc: kbd("Ctrl") + " + " + kbd("O") },
+        { label: t("help.fileSave"), desc: kbd("Ctrl") + " + " + kbd("S") },
+        { label: t("help.fileSaveAs"), desc: kbd("Ctrl") + " + " + kbd("Shift") + " + " + kbd("S") },
+      ],
+    },
   ];
 
-  const listItems = items.map((item) => `<li><strong>${item.label}</strong> ${item.desc}</li>`).join("");
+  const sectionsHtml = sections
+    .map((section, index) => {
+      const listItems = section.items
+        .map((item) => `<li><strong>${item.label}</strong> ${item.desc}</li>`)
+        .join("");
+      const sectionStyle = index === 0 ? "" : ' style="border-top: 1px dashed var(--border-help-note); margin-top: 0.6rem; padding-top: 0.55rem;"';
+      return `<section class="help-section"${sectionStyle}><h4 style="margin: 0 0 0.2rem; font-size: 0.78rem; color: var(--fg-help-note);">${section.title}</h4><ul style="margin-top: 0.25rem;">${listItems}</ul></section>`;
+    })
+    .join("");
 
   panel.innerHTML = `
     <h3>${t("help.title")}</h3>
-    <ul>${listItems}</ul>
+    ${sectionsHtml}
     <p style="font-size: 0.75rem; color: var(--fg-help-note); border-top: 1px solid var(--border-help-note); padding-top: 8px; margin-top: 10px;">
       ${t("help.note")}
     </p>

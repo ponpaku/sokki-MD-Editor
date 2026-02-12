@@ -47,9 +47,15 @@ export async function saveSnapshot(text, currentPath) {
   }
 }
 
-export function scheduleSave(text, currentPath) {
+export function cancelScheduledSave() {
   if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = null;
+}
+
+export function scheduleSave(text, currentPath) {
+  cancelScheduledSave();
   debounceTimer = setTimeout(() => {
+    debounceTimer = null;
     saveSnapshot(text, currentPath);
   }, DEBOUNCE_MS);
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "productName": "Sokki MD Editor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.sokki.md-editor",
   "build": {
     "beforeDevCommand": "pnpm --dir frontend dev",

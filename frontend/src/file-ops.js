@@ -19,11 +19,16 @@ export async function actionOpen() {
   return { path: selected, text };
 }
 
-export async function actionSaveAs(text, currentPath) {
+export async function actionPickSaveAsPath(currentPath) {
   const path = await save({
     defaultPath: currentPath || undefined,
     filters: fileFilters(),
   });
+  return path || null;
+}
+
+export async function actionSaveAs(text, currentPath) {
+  const path = await actionPickSaveAsPath(currentPath);
   if (!path) return null;
   await writeTextFile(path, text);
   return path;

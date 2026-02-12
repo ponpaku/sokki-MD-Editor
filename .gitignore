@@ -13,6 +13,9 @@ Thumbs.db
 # IDE / tools
 .claude/
 
+# Local notes (personal)
+local-notes/
+
 # Misc: root PNGs (icon source images etc.)
 /*.png
 

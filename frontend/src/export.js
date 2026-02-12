@@ -6,6 +6,7 @@ import {
   TextRun,
   HeadingLevel,
   LevelFormat,
+  LevelSuffix,
   AlignmentType,
   Table,
   TableRow,
@@ -102,16 +103,19 @@ function parseMarkdownTable(block) {
   const lines = block.split("\n").filter((l) => l.trim());
   if (lines.length < 2) return null;
 
-  // Verify separator row (2nd line must be like | --- | --- |)
-  if (!/^\|[\s:-]+\|/.test(lines[1])) return null;
+  // Accept both "| a | b |" and "a | b" table syntaxes.
+  const separator = lines[1].trim();
+  if (!/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(separator)) return null;
 
-  const parseRow = (line) =>
-    line
-      .split("|")
-      .slice(1, -1) // remove empty first/last from leading/trailing |
-      .map((cell) => cell.trim());
+  const parseRow = (line) => {
+    let row = line.trim();
+    if (row.startsWith("|")) row = row.slice(1);
+    if (row.endsWith("|")) row = row.slice(0, -1);
+    return row.split("|").map((cell) => cell.trim());
+  };
 
   const headerCells = parseRow(lines[0]);
+  if (headerCells.length === 0) return null;
   const dataRows = lines.slice(2).map(parseRow);
 
   const colCount = headerCells.length;
@@ -151,7 +155,6 @@ function parseMarkdownTable(block) {
     columnWidths: Array(colCount).fill(cellWidth),
   });
 }
-
 const HEADING_LEVELS = [
   HeadingLevel.HEADING_1,
   HeadingLevel.HEADING_2,
@@ -161,119 +164,189 @@ const HEADING_LEVELS = [
   HeadingLevel.HEADING_6,
 ];
 
+const MAX_LIST_LEVEL = 8;
+
+function clampListLevel(level) {
+  return Math.max(0, Math.min(MAX_LIST_LEVEL, level));
+}
+
+function textRunsOrEmpty(text) {
+  const runs = processFormattedText(text || "");
+  return runs.length > 0 ? runs : [new TextRun("")];
+}
+
+function extractListItemText(item) {
+  const tokens = Array.isArray(item?.tokens) ? item.tokens : [];
+  const parts = [];
+  for (const token of tokens) {
+    if (!token || token.type === "list" || token.type === "space") continue;
+    if (typeof token.text === "string" && token.text.length > 0) {
+      parts.push(token.text);
+      continue;
+    }
+    if (typeof token.raw === "string") {
+      const raw = token.raw.trim();
+      if (raw.length > 0) parts.push(raw);
+    }
+  }
+
+  let text = parts.join("\n").trim();
+  if (!text && typeof item?.text === "string") {
+    const firstLine = item.text.split("\n").find((line) => line.trim().length > 0) || "";
+    text = firstLine.trim();
+  }
+
+  if (item?.task) {
+    const checked = item.checked ? "x" : " ";
+    text = `[${checked}]${text ? ` ${text}` : ""}`;
+  }
+  return text;
+}
+
+function renderListToken(listToken, level, paragraphs, state) {
+  const listLevel = clampListLevel(level);
+  const items = Array.isArray(listToken?.items) ? listToken.items : [];
+  if (listToken?.ordered) {
+    state.hasNumberedList = true;
+  }
+
+  for (const item of items) {
+    const itemText = extractListItemText(item);
+    if (listToken?.ordered) {
+      paragraphs.push(
+        new Paragraph({
+          numbering: { reference: "default-numbering", level: listLevel },
+          children: textRunsOrEmpty(itemText),
+        })
+      );
+    } else {
+      paragraphs.push(
+        new Paragraph({
+          bullet: { level: listLevel },
+          children: textRunsOrEmpty(itemText),
+        })
+      );
+    }
+
+    const nestedLists = (Array.isArray(item?.tokens) ? item.tokens : []).filter((token) => token?.type === "list");
+    for (const nested of nestedLists) {
+      renderListToken(nested, listLevel + 1, paragraphs, state);
+    }
+  }
+}
+
+function renderMarkdownTokens(tokens, paragraphs, state) {
+  for (const token of tokens || []) {
+    if (!token || token.type === "space") continue;
+
+    if (token.type === "heading") {
+      const level = Math.max(0, Math.min(HEADING_LEVELS.length - 1, (token.depth || 1) - 1));
+      paragraphs.push(
+        new Paragraph({
+          heading: HEADING_LEVELS[level],
+          children: textRunsOrEmpty(token.text || ""),
+        })
+      );
+      continue;
+    }
+
+    if (token.type === "table") {
+      const table = parseMarkdownTable(token.raw || "");
+      if (table) {
+        paragraphs.push(table);
+      } else {
+        const fallback = (token.raw || "").trim();
+        if (fallback) {
+          paragraphs.push(
+            new Paragraph({
+              children: textRunsOrEmpty(fallback),
+            })
+          );
+        }
+      }
+      continue;
+    }
+
+    if (token.type === "list") {
+      renderListToken(token, 0, paragraphs, state);
+      continue;
+    }
+
+    if (token.type === "blockquote") {
+      paragraphs.push(
+        new Paragraph({
+          indent: { left: 720 },
+          children: textRunsOrEmpty(token.text || token.raw || ""),
+        })
+      );
+      continue;
+    }
+
+    if (token.type === "paragraph" || token.type === "text") {
+      paragraphs.push(
+        new Paragraph({
+          children: textRunsOrEmpty(token.text || ""),
+        })
+      );
+      continue;
+    }
+
+    if (token.type === "code") {
+      paragraphs.push(
+        new Paragraph({
+          children: textRunsOrEmpty(token.text || ""),
+        })
+      );
+      continue;
+    }
+
+    const fallbackText =
+      typeof token.text === "string"
+        ? token.text
+        : typeof token.raw === "string"
+          ? token.raw.trim()
+          : "";
+    if (!fallbackText) continue;
+    paragraphs.push(
+      new Paragraph({
+        children: textRunsOrEmpty(fallbackText),
+      })
+    );
+  }
+}
+
 /**
  * Convert Markdown string to a docx Document.
  */
 export function markdownToDocx(md) {
   // Normalize <br> to newline before processing
-  let text = md.replace(/<br\s*\/?>/gi, "\n");
+  const text = md.replace(/<br\s*\/?>/gi, "\n");
 
-  // Split into blocks by double newline
-  const blocks = text.split(/\n{2,}/);
+  const tokens = marked.lexer(text);
   const paragraphs = [];
+  const state = { hasNumberedList: false };
+  renderMarkdownTokens(tokens, paragraphs, state);
 
-  // Track ordered list numbering reference
-  let hasNumberedList = false;
-
-  // First pass: check if we need numbered list config
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (/^\d+\.\s/.test(trimmed)) {
-      hasNumberedList = true;
-      break;
-    }
-  }
-
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed) continue;
-
-    // Heading
-    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)/);
-    if (headingMatch) {
-      const level = headingMatch[1].length - 1; // 0-indexed
-      const headingText = headingMatch[2];
-      paragraphs.push(
-        new Paragraph({
-          heading: HEADING_LEVELS[level],
-          children: processFormattedText(headingText),
-        })
-      );
-      continue;
-    }
-
-    // Table
-    if (/^\|/.test(trimmed)) {
-      const table = parseMarkdownTable(trimmed);
-      if (table) {
-        paragraphs.push(table);
-        continue;
-      }
-    }
-
-    // Unordered list (may have multiple lines)
-    if (/^[-*+]\s/.test(trimmed)) {
-      const items = trimmed.split("\n");
-      for (const item of items) {
-        const itemText = item.replace(/^[-*+]\s+/, "");
-        paragraphs.push(
-          new Paragraph({
-            bullet: { level: 0 },
-            children: processFormattedText(itemText),
-          })
-        );
-      }
-      continue;
-    }
-
-    // Ordered list
-    if (/^\d+\.\s/.test(trimmed)) {
-      const items = trimmed.split("\n");
-      for (const item of items) {
-        const itemText = item.replace(/^\d+\.\s+/, "");
-        paragraphs.push(
-          new Paragraph({
-            numbering: { reference: "default-numbering", level: 0 },
-            children: processFormattedText(itemText),
-          })
-        );
-      }
-      continue;
-    }
-
-    // Blockquote
-    if (/^>\s?/.test(trimmed)) {
-      const quoteText = trimmed.replace(/^>\s?/gm, "");
-      paragraphs.push(
-        new Paragraph({
-          indent: { left: 720 },
-          children: processFormattedText(quoteText),
-        })
-      );
-      continue;
-    }
-
-    // Normal paragraph
-    paragraphs.push(
-      new Paragraph({
-        children: processFormattedText(trimmed),
-      })
-    );
-  }
-
-  const numbering = hasNumberedList
+  const numbering = state.hasNumberedList
     ? {
         config: [
           {
             reference: "default-numbering",
-            levels: [
-              {
-                level: 0,
-                format: LevelFormat.DECIMAL,
-                text: "%1.",
-                alignment: AlignmentType.START,
+            levels: Array.from({ length: MAX_LIST_LEVEL + 1 }, (_, level) => ({
+              level,
+              format: LevelFormat.DECIMAL,
+              suffix: LevelSuffix.SPACE,
+              text: `%${level + 1}.`,
+              alignment: AlignmentType.START,
+              style: {
+                paragraph: {
+                  indent: {
+                    left: 720 * (level + 1),
+                    hanging: 360,
+                  },
+                },
               },
-            ],
+            })),
           },
         ],
       }
@@ -284,7 +357,6 @@ export function markdownToDocx(md) {
     sections: [{ children: paragraphs }],
   });
 }
-
 // --- Export Actions ---
 
 function replaceExt(filePath, newExt) {
