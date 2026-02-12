@@ -12,6 +12,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { resolvePreviewImages } from "./image-resolver.js";
 import { startWatching, stopWatching, suppressNextChange, clearSuppression, setExternalChangeHandler } from "./file-watcher.js";
+import {
+  findListContext,
+  findParentListItem,
+  findPreviousOrderedNumberAtIndent,
+  getTableCellRanges,
+  isEmptyTableRow,
+  resolveTableTabTarget,
+  shouldCoalesceNativeEdit,
+  normalizeListIndentWidth,
+  parseListLine,
+} from "./editor-logic.js";
 
 // --- DOM Elements ---
 const editor = document.getElementById("editor");
@@ -42,6 +53,7 @@ const undoStack = [];
 const redoStack = [];
 let lastKnownSnapshot = null;
 let cleanValue = "";
+let nativeEditGroup = null;
 
 function captureEditorSnapshot() {
   return {
@@ -79,6 +91,7 @@ function resetEditorHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
   lastKnownSnapshot = captureEditorSnapshot();
+  nativeEditGroup = null;
 }
 
 function commitProgrammaticEdit(beforeSnapshot) {
@@ -90,16 +103,28 @@ function commitProgrammaticEdit(beforeSnapshot) {
   pushHistory(undoStack, beforeSnapshot);
   redoStack.length = 0;
   lastKnownSnapshot = currentSnapshot;
+  nativeEditGroup = null;
   updatePreview();
   markDirty();
   return true;
 }
 
-function handleNativeInputChange() {
+function handleNativeInputChange(e) {
   const currentSnapshot = captureEditorSnapshot();
   if (lastKnownSnapshot && currentSnapshot.value !== lastKnownSnapshot.value) {
-    pushHistory(undoStack, lastKnownSnapshot);
-    redoStack.length = 0;
+    const now = Date.now();
+    const inputType = typeof e?.inputType === "string" ? e.inputType : "unknown";
+    const canCoalesce = shouldCoalesceNativeEdit(nativeEditGroup, inputType, now - (nativeEditGroup?.lastAt || 0));
+    if (!canCoalesce) {
+      pushHistory(undoStack, lastKnownSnapshot);
+      redoStack.length = 0;
+      nativeEditGroup = {
+        inputType,
+        lastAt: now,
+      };
+    } else {
+      nativeEditGroup.lastAt = now;
+    }
   }
   lastKnownSnapshot = currentSnapshot;
   updatePreview();
@@ -113,6 +138,7 @@ function handleUndo() {
   pushHistory(redoStack, currentSnapshot);
   applyEditorSnapshot(previousSnapshot);
   lastKnownSnapshot = captureEditorSnapshot();
+  nativeEditGroup = null;
   updatePreview();
   markDirty();
   return true;
@@ -125,6 +151,7 @@ function handleRedo() {
   pushHistory(undoStack, currentSnapshot);
   applyEditorSnapshot(nextSnapshot);
   lastKnownSnapshot = captureEditorSnapshot();
+  nativeEditGroup = null;
   updatePreview();
   markDirty();
   return true;
@@ -373,21 +400,205 @@ function addColumn(e) {
   return true;
 }
 
-function parseListLine(line) {
-  const match = line.match(/^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s(.*)$/);
-  if (!match) return null;
-  const marker = match[2];
-  const orderedMatch = marker.match(/^(\d+)\.$/);
-  const taskMatch = marker.match(/^([-*])\s\[([ xX])\]$/);
+function autoFormatListSelection() {
+  const beforeSnapshot = captureEditorSnapshot();
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const value = editor.value;
+
+  const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
+  const lastLineEnd = value.indexOf("\n", adjustedEnd);
+  const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+  const block = value.substring(firstLineStart, blockEnd);
+  const lines = block.split("\n");
+
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s(.*)$/;
+  const hasListLine = lines.some((line) => listRegex.test(line));
+  if (!hasListLine) return false;
+
+  const orderedCounters = new Map();
+  const newLines = lines.map((line) => {
+    const match = line.match(listRegex);
+    if (!match) {
+      orderedCounters.clear();
+      return line;
+    }
+    const indentLen = normalizeListIndentWidth(match[1]);
+    const parsed = parseListLine(line);
+    if (!parsed) return line;
+
+    for (const key of Array.from(orderedCounters.keys())) {
+      if (key > indentLen) orderedCounters.delete(key);
+    }
+
+    let marker;
+    if (parsed.type === "ordered") {
+      const current = orderedCounters.get(indentLen) || 0;
+      const next = current + 1;
+      orderedCounters.set(indentLen, next);
+      marker = `${next}.`;
+    } else if (parsed.type === "task") {
+      orderedCounters.delete(indentLen);
+      marker = `- [${parsed.checked ? "x" : " "}]`;
+    } else {
+      orderedCounters.delete(indentLen);
+      marker = "-";
+    }
+    return `${" ".repeat(indentLen)}${marker} ${parsed.content}`;
+  });
+
+  const newBlock = newLines.join("\n");
+  if (newBlock === block) return true;
+
+  editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
+  const lengthDelta = newBlock.length - block.length;
+  editor.selectionStart = Math.max(firstLineStart, start);
+  editor.selectionEnd = Math.max(firstLineStart, end + lengthDelta);
+  commitProgrammaticEdit(beforeSnapshot);
+  return true;
+}
+
+function buildLineOffsets(value) {
+  const lines = value.split("\n");
+  const offsets = [];
+  let pos = 0;
+  for (const line of lines) {
+    offsets.push(pos);
+    pos += line.length + 1;
+  }
+  return { lines, offsets };
+}
+
+function getCurrentTableContext(value, start) {
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const nextNewline = value.indexOf("\n", start);
+  const lineEnd = nextNewline === -1 ? value.length : nextNewline;
+  const line = value.substring(lineStart, lineEnd);
+  if (!line.trim().startsWith("|")) return null;
+
+  const cellRanges = getTableCellRanges(line);
+  if (cellRanges.length === 0) return null;
+
+  const { lines, offsets } = buildLineOffsets(value);
+  const lineIndex = value.substring(0, lineStart).split("\n").length - 1;
+  let blockStart = lineIndex;
+  while (blockStart > 0 && lines[blockStart - 1].trim().startsWith("|")) {
+    blockStart--;
+  }
+  let blockEnd = lineIndex;
+  while (blockEnd < lines.length - 1 && lines[blockEnd + 1].trim().startsWith("|")) {
+    blockEnd++;
+  }
+
+  const cursorInLine = start - lineStart;
+  let cellIndex = cellRanges.length - 1;
+  for (let i = 0; i < cellRanges.length; i++) {
+    if (cursorInLine <= cellRanges[i].end) {
+      cellIndex = i;
+      break;
+    }
+  }
+
   return {
-    indentLen: match[1].length,
-    marker,
-    content: match[3],
-    type: /^\d+\.$/.test(marker) ? "ordered" : taskMatch ? "task" : "bullet",
-    orderedNumber: orderedMatch ? parseInt(orderedMatch[1], 10) : null,
-    bulletChar: marker[0],
-    checked: taskMatch ? taskMatch[2].toLowerCase() === "x" : false,
+    line,
+    lineStart,
+    lineEnd,
+    lineIndex,
+    blockStart,
+    blockEnd,
+    lines,
+    offsets,
+    cellRanges,
+    cellIndex,
   };
+}
+
+function placeCursorInCell(lineText, lineStart, cellRange) {
+  const cellText = lineText.substring(cellRange.start, cellRange.end);
+  const firstNonSpace = cellText.search(/\S/);
+  const offset = firstNonSpace === -1 ? 0 : firstNonSpace;
+  const pos = lineStart + cellRange.start + offset;
+  editor.selectionStart = editor.selectionEnd = pos;
+}
+
+function handleTableTabNavigation(e) {
+  const value = editor.value;
+  const start = editor.selectionStart;
+  const context = getCurrentTableContext(value, start);
+  if (!context) return false;
+
+  e.preventDefault();
+  const tableRows = [];
+  for (let i = context.blockStart; i <= context.blockEnd; i++) {
+    tableRows.push(getTableCellRanges(context.lines[i]).length);
+  }
+  const target = resolveTableTabTarget(
+    tableRows,
+    context.lineIndex - context.blockStart,
+    context.cellIndex,
+    e.shiftKey,
+  );
+  if (!target) return true;
+  const targetLineIndex = context.blockStart + target.rowIndex;
+  let targetCellIndex = target.cellIndex;
+
+  const targetLine = context.lines[targetLineIndex];
+  const targetRanges = getTableCellRanges(targetLine);
+  if (targetRanges.length === 0) return true;
+  targetCellIndex = Math.max(0, Math.min(targetCellIndex, targetRanges.length - 1));
+  placeCursorInCell(targetLine, context.offsets[targetLineIndex], targetRanges[targetCellIndex]);
+  return true;
+}
+
+function handleTableCtrlEnter(e) {
+  const value = editor.value;
+  const start = editor.selectionStart;
+  const context = getCurrentTableContext(value, start);
+  if (!context) return false;
+
+  e.preventDefault();
+  const beforeSnapshot = captureEditorSnapshot();
+  const colCount = context.cellRanges.length;
+  if (colCount <= 0) return true;
+
+  const newRow = `| ${Array(colCount).fill(" ").join(" | ")} |`;
+  editor.value = value.substring(0, context.lineEnd) + `\n${newRow}` + value.substring(context.lineEnd);
+  const insertedStart = context.lineEnd + 1;
+  const firstCellRange = getTableCellRanges(newRow)[0];
+  placeCursorInCell(newRow, insertedStart, firstCellRange);
+  commitProgrammaticEdit(beforeSnapshot);
+  return true;
+}
+
+function handleTableBackspaceDelete(e) {
+  if (editor.selectionStart !== editor.selectionEnd) return false;
+  const value = editor.value;
+  const start = editor.selectionStart;
+  const context = getCurrentTableContext(value, start);
+  if (!context) return false;
+  if (!isEmptyTableRow(context.line)) return false;
+
+  e.preventDefault();
+  const beforeSnapshot = captureEditorSnapshot();
+
+  let newValue;
+  let newPos;
+  if (context.lineEnd < value.length) {
+    newValue = value.substring(0, context.lineStart) + value.substring(context.lineEnd + 1);
+    newPos = context.lineStart;
+  } else if (context.lineStart > 0) {
+    newValue = value.substring(0, context.lineStart - 1) + value.substring(context.lineEnd);
+    newPos = context.lineStart - 1;
+  } else {
+    newValue = "";
+    newPos = 0;
+  }
+
+  editor.value = newValue;
+  editor.selectionStart = editor.selectionEnd = Math.max(0, Math.min(newPos, newValue.length));
+  commitProgrammaticEdit(beforeSnapshot);
+  return true;
 }
 
 function markerFromTemplate(source, template) {
@@ -423,22 +634,6 @@ function findTemplateAtIndent(fullLines, lineIndex, targetIndentLen, excludedSta
       const parsedDown = parseListLine(fullLines[down]);
       if (parsedDown && parsedDown.indentLen === targetIndentLen) return parsedDown;
     }
-  }
-  return null;
-}
-
-function findPreviousOrderedNumberAtIndent(fullLines, lineIndex, targetIndentLen, excludedStart, excludedEnd) {
-  let blockStart = lineIndex;
-  while (blockStart > 0 && fullLines[blockStart - 1].trim().length > 0) {
-    blockStart--;
-  }
-  for (let i = lineIndex - 1; i >= blockStart; i--) {
-    if (i >= excludedStart && i < excludedEnd) continue;
-    const parsed = parseListLine(fullLines[i]);
-    if (!parsed) continue;
-    if (parsed.indentLen < targetIndentLen) break;
-    if (parsed.indentLen !== targetIndentLen || parsed.type !== "ordered") continue;
-    return parsed.orderedNumber;
   }
   return null;
 }
@@ -557,45 +752,6 @@ function handleListIndent(e) {
   return true;
 }
 
-function findListContext(value, cursorPos) {
-  const textBefore = value.substring(0, cursorPos);
-  const lines = textBefore.split("\n");
-  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
-
-  // Start from the line before current (current line is lines[lines.length-1])
-  // Each line must end with <br> to be part of the continuation chain.
-  for (let i = lines.length - 2; i >= 0; i--) {
-    const line = lines[i];
-    if (!line.trimEnd().endsWith("<br>")) return null;
-    // This line ends with <br> — check if it's also a list marker (origin)
-    const match = line.match(listRegex);
-    if (match) return match;
-    // <br> continuation but not a list marker — keep searching upward
-  }
-  return null;
-}
-
-function findParentListItem(value, cursorPos, currentIndentLen) {
-  const textBefore = value.substring(0, cursorPos);
-  const lines = textBefore.split("\n");
-  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
-
-  for (let i = lines.length - 2; i >= 0; i--) {
-    const line = lines[i];
-    if (line.trim().length === 0) break;
-    const match = line.match(listRegex);
-    if (match && match[1].length < currentIndentLen) {
-      return match;
-    }
-    if (match) continue;
-    const continuationIndent = line.match(/^(\s*)/)[1].length;
-    if (continuationIndent >= currentIndentLen) continue;
-    if (line.trimEnd().endsWith("<br>")) continue;
-    break;
-  }
-  return null;
-}
-
 function getShiftEnterContinuationIndent(value, cursorPos) {
   const lineStart = value.lastIndexOf("\n", cursorPos - 1) + 1;
   const currentLine = value.substring(lineStart, cursorPos);
@@ -626,16 +782,13 @@ function handleEnterKey(e) {
   // 1. Table Row Check
   if (fullCurrentLine.trim().startsWith("|")) {
     e.preventDefault();
-    const pipeCount = (fullCurrentLine.match(/\|/g) || []).length;
-    const isEmptyTableRow =
-      pipeCount >= 2 &&
-      fullCurrentLine.replace(/\|/g, "").trim().length === 0;
-    if (isEmptyTableRow) {
+    if (isEmptyTableRow(fullCurrentLine)) {
       editor.value = value.substring(0, lineStart) + value.substring(lineEnd);
       editor.selectionStart = editor.selectionEnd = lineStart;
       commitProgrammaticEdit(beforeSnapshot);
       return;
     }
+    const pipeCount = (fullCurrentLine.match(/\|/g) || []).length;
     const colCount = pipeCount - 1;
     if (colCount > 0) {
       const newRow =
@@ -873,6 +1026,9 @@ exportHtmlBtn.addEventListener("click", handleExportHtml);
 editor.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey) {
     const key = e.key.toLowerCase();
+    if (key === "enter") {
+      if (handleTableCtrlEnter(e)) return;
+    }
     if (key === "z") {
       e.preventDefault();
       if (e.shiftKey) {
@@ -885,6 +1041,9 @@ editor.addEventListener("keydown", (e) => {
       e.preventDefault();
       handleRedo();
       return;
+    } else if (key === "l" && e.shiftKey) {
+      e.preventDefault();
+      if (autoFormatListSelection()) return;
     }
     if (key === "o") {
       e.preventDefault();
@@ -916,8 +1075,12 @@ editor.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Tab") {
+    if (handleTableTabNavigation(e)) return;
     if (handleListIndent(e)) return;
     if (!e.shiftKey && handleShortcutKey(e)) return;
+  }
+  if (e.key === "Backspace") {
+    if (handleTableBackspaceDelete(e)) return;
   }
   if (e.key === " ") {
     if (handleShortcutKey(e)) return;
