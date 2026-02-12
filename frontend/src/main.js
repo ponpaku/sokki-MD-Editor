@@ -266,13 +266,67 @@ function addColumn(e) {
   return true;
 }
 
+function parseListLine(line) {
+  const match = line.match(/^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s(.*)$/);
+  if (!match) return null;
+  const marker = match[2];
+  const taskMatch = marker.match(/^([-*])\s\[([ xX])\]$/);
+  return {
+    indentLen: match[1].length,
+    marker,
+    content: match[3],
+    type: /^\d+\.$/.test(marker) ? "ordered" : taskMatch ? "task" : "bullet",
+    bulletChar: marker[0],
+    checked: taskMatch ? taskMatch[2].toLowerCase() === "x" : false,
+  };
+}
+
+function markerFromTemplate(source, template) {
+  if (template.type === "ordered") return "1.";
+  if (template.type === "task") {
+    const checked = source.type === "task" && source.checked;
+    return `${template.bulletChar} [${checked ? "x" : " "}]`;
+  }
+  return template.bulletChar;
+}
+
+function findTemplateAtIndent(fullLines, lineIndex, targetIndentLen, excludedStart, excludedEnd) {
+  let blockStart = lineIndex;
+  while (blockStart > 0 && fullLines[blockStart - 1].trim().length > 0) {
+    blockStart--;
+  }
+  let blockEnd = lineIndex;
+  while (
+    blockEnd < fullLines.length - 1 &&
+    fullLines[blockEnd + 1].trim().length > 0
+  ) {
+    blockEnd++;
+  }
+
+  for (let dist = 1; blockStart <= lineIndex - dist || lineIndex + dist <= blockEnd; dist++) {
+    const up = lineIndex - dist;
+    if (up >= blockStart && (up < excludedStart || up >= excludedEnd)) {
+      const parsedUp = parseListLine(fullLines[up]);
+      if (parsedUp && parsedUp.indentLen === targetIndentLen) return parsedUp;
+    }
+    const down = lineIndex + dist;
+    if (down <= blockEnd && (down < excludedStart || down >= excludedEnd)) {
+      const parsedDown = parseListLine(fullLines[down]);
+      if (parsedDown && parsedDown.indentLen === targetIndentLen) return parsedDown;
+    }
+  }
+  return null;
+}
+
 function handleListIndent(e) {
   const start = editor.selectionStart;
   const end = editor.selectionEnd;
   const value = editor.value;
+  const fullLines = value.split("\n");
 
   // Get range of lines covered by selection
   const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const firstLineIndex = value.substring(0, firstLineStart).split("\n").length - 1;
   // When selection ends at a line boundary, exclude the next line
   const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
   const lastLineEnd = value.indexOf("\n", adjustedEnd);
@@ -293,11 +347,22 @@ function handleListIndent(e) {
     // Outdent: remove up to 4 leading spaces from list lines
     newLines = lines.map((line, i) => {
       if (!listRegex.test(line)) return line;
+      const parsed = parseListLine(line);
+      if (!parsed) return line;
       const removed = line.match(/^( {1,4})/);
       if (removed) {
         const count = removed[1].length;
         if (i === 0) cursorDelta = -count;
-        return line.substring(count);
+        const targetIndentLen = parsed.indentLen - count;
+        const template = findTemplateAtIndent(
+          fullLines,
+          firstLineIndex + i,
+          targetIndentLen,
+          firstLineIndex,
+          firstLineIndex + lines.length,
+        );
+        const marker = template ? markerFromTemplate(parsed, template) : parsed.marker;
+        return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
       }
       return line;
     });
@@ -305,8 +370,19 @@ function handleListIndent(e) {
     // Indent: add 4 spaces to list lines
     newLines = lines.map((line, i) => {
       if (!listRegex.test(line)) return line;
+      const parsed = parseListLine(line);
+      if (!parsed) return line;
       if (i === 0) cursorDelta = 4;
-      return "    " + line;
+      const targetIndentLen = parsed.indentLen + 4;
+      const template = findTemplateAtIndent(
+        fullLines,
+        firstLineIndex + i,
+        targetIndentLen,
+        firstLineIndex,
+        firstLineIndex + lines.length,
+      );
+      const marker = template ? markerFromTemplate(parsed, template) : parsed.marker;
+      return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
     });
   }
 
