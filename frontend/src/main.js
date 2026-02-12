@@ -357,10 +357,27 @@ function findParentListItem(value, cursorPos, currentIndentLen) {
       return match;
     }
     if (match) continue;
+    const continuationIndent = line.match(/^(\s*)/)[1].length;
+    if (continuationIndent >= currentIndentLen) continue;
     if (line.trimEnd().endsWith("<br>")) continue;
     break;
   }
   return null;
+}
+
+function getShiftEnterContinuationIndent(value, cursorPos) {
+  const lineStart = value.lastIndexOf("\n", cursorPos - 1) + 1;
+  const currentLine = value.substring(lineStart, cursorPos);
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
+  const lineMatch = currentLine.match(listRegex);
+  if (lineMatch) {
+    return " ".repeat(lineMatch[0].length);
+  }
+  const brListMatch = findListContext(value, cursorPos);
+  if (brListMatch) {
+    return " ".repeat(brListMatch[0].length);
+  }
+  return "";
 }
 
 function handleEnterKey(e) {
@@ -641,7 +658,8 @@ editor.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     if (e.shiftKey) {
       e.preventDefault();
-      insertText("<br>\n");
+      const continuationIndent = getShiftEnterContinuationIndent(editor.value, editor.selectionStart);
+      insertText("<br>\n" + continuationIndent);
     } else {
       handleEnterKey(e);
     }
