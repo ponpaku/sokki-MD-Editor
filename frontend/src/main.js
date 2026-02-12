@@ -742,9 +742,13 @@ function handleListIndent(e) {
   const orderedCounters = new Map();
 
   function resolveMarkerForTarget(parsed, template, targetIndentLen, lineIndex) {
-    if (!template) return parsed.marker;
-    if (template.type !== "ordered") {
+    if (template && template.type !== "ordered") {
       return markerFromTemplate(parsed, template);
+    }
+    // If there is no template at the target indent, keep non-ordered markers as-is.
+    // Ordered markers should still be renumbered for the new level.
+    if (!template && parsed.type !== "ordered") {
+      return parsed.marker;
     }
     const counterKey = `${targetIndentLen}`;
     const assigned = orderedCounters.get(counterKey);
