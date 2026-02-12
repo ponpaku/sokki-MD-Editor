@@ -435,7 +435,9 @@ function findPreviousOrderedNumberAtIndent(fullLines, lineIndex, targetIndentLen
   for (let i = lineIndex - 1; i >= blockStart; i--) {
     if (i >= excludedStart && i < excludedEnd) continue;
     const parsed = parseListLine(fullLines[i]);
-    if (!parsed || parsed.indentLen !== targetIndentLen || parsed.type !== "ordered") continue;
+    if (!parsed) continue;
+    if (parsed.indentLen < targetIndentLen) break;
+    if (parsed.indentLen !== targetIndentLen || parsed.type !== "ordered") continue;
     return parsed.orderedNumber;
   }
   return null;
@@ -492,7 +494,7 @@ function handleListIndent(e) {
       orderedCounters.set(counterKey, next);
       return `${next}.`;
     }
-    const seed = template.orderedNumber || 1;
+    const seed = 1;
     orderedCounters.set(counterKey, seed);
     return `${seed}.`;
   }
