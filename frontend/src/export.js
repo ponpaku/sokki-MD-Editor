@@ -103,16 +103,19 @@ function parseMarkdownTable(block) {
   const lines = block.split("\n").filter((l) => l.trim());
   if (lines.length < 2) return null;
 
-  // Verify separator row (2nd line must be like | --- | --- |)
-  if (!/^\|[\s:-]+\|/.test(lines[1])) return null;
+  // Accept both "| a | b |" and "a | b" table syntaxes.
+  const separator = lines[1].trim();
+  if (!/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?$/.test(separator)) return null;
 
-  const parseRow = (line) =>
-    line
-      .split("|")
-      .slice(1, -1) // remove empty first/last from leading/trailing |
-      .map((cell) => cell.trim());
+  const parseRow = (line) => {
+    let row = line.trim();
+    if (row.startsWith("|")) row = row.slice(1);
+    if (row.endsWith("|")) row = row.slice(0, -1);
+    return row.split("|").map((cell) => cell.trim());
+  };
 
   const headerCells = parseRow(lines[0]);
+  if (headerCells.length === 0) return null;
   const dataRows = lines.slice(2).map(parseRow);
 
   const colCount = headerCells.length;
@@ -152,7 +155,6 @@ function parseMarkdownTable(block) {
     columnWidths: Array(colCount).fill(cellWidth),
   });
 }
-
 const HEADING_LEVELS = [
   HeadingLevel.HEADING_1,
   HeadingLevel.HEADING_2,
@@ -252,6 +254,15 @@ function renderMarkdownTokens(tokens, paragraphs, state) {
       const table = parseMarkdownTable(token.raw || "");
       if (table) {
         paragraphs.push(table);
+      } else {
+        const fallback = (token.raw || "").trim();
+        if (fallback) {
+          paragraphs.push(
+            new Paragraph({
+              children: textRunsOrEmpty(fallback),
+            })
+          );
+        }
       }
       continue;
     }
