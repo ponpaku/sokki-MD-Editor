@@ -105,7 +105,7 @@ function parseMarkdownTable(block) {
 
   // Accept both "| a | b |" and "a | b" table syntaxes.
   const separator = lines[1].trim();
-  if (!/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?$/.test(separator)) return null;
+  if (!/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(separator)) return null;
 
   const parseRow = (line) => {
     let row = line.trim();
