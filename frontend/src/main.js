@@ -521,9 +521,16 @@ function toggleListTypeSelection() {
   if (newBlock === block) return true;
 
   editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
-  const lengthDelta = newBlock.length - block.length;
-  editor.selectionStart = Math.max(firstLineStart, start);
-  editor.selectionEnd = Math.max(firstLineStart, end + lengthDelta);
+  if (start === end) {
+    const cursorPos = Math.max(firstLineStart, Math.min(start, editor.value.length));
+    editor.selectionStart = editor.selectionEnd = cursorPos;
+  } else {
+    const lengthDelta = newBlock.length - block.length;
+    const newStart = Math.max(firstLineStart, start);
+    const newEnd = Math.max(firstLineStart, end + lengthDelta);
+    editor.selectionStart = Math.min(newStart, newEnd);
+    editor.selectionEnd = Math.max(newStart, newEnd);
+  }
   commitProgrammaticEdit(beforeSnapshot);
   return true;
 }
