@@ -594,7 +594,30 @@ function handleEnterKey(e) {
       markDirty();
     } else {
       e.preventDefault();
-      insertText("\n\n");
+      const nextNewline = value.indexOf("\n", start);
+      const lineEnd = nextNewline === -1 ? value.length : nextNewline;
+      const fullCurrentLine = value.substring(previousNewline + 1, lineEnd);
+      const prevLineEnd = previousNewline;
+      const prevLineStart = prevLineEnd > 0 ? value.lastIndexOf("\n", prevLineEnd - 1) + 1 : 0;
+      const prevLine = value.substring(prevLineStart, prevLineEnd);
+      const hasNextLine = lineEnd < value.length;
+      const nextLineStart = hasNextLine ? lineEnd + 1 : value.length;
+      const nextLineBreak = hasNextLine ? value.indexOf("\n", nextLineStart) : -1;
+      const nextLineEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+      const nextLine = value.substring(nextLineStart, nextLineEnd);
+      const isBlockSeparator =
+        fullCurrentLine.trim().length === 0 &&
+        prevLine.trim().length > 0 &&
+        nextLine.trim().length > 0;
+      if (isBlockSeparator) {
+        // Keep the cursor on a separator line while adding one blank line above/below it.
+        editor.value = value.substring(0, start) + "\n\n" + value.substring(start);
+        editor.selectionStart = editor.selectionEnd = start + 1;
+        updatePreview();
+        markDirty();
+      } else {
+        insertText("\n\n");
+      }
     }
   }
 }
