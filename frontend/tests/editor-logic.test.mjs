@@ -10,7 +10,7 @@ import {
   parseListLine,
   resolveTableTabTarget,
   shouldCoalesceNativeEdit,
-  toggleListBlockLines,
+  toggleListLinesAtIndent,
 } from "../src/editor-logic.js";
 
 test("findListContext resolves <br> continuation list marker", () => {
@@ -101,16 +101,22 @@ test("table tab target resolves row/cell movement and edge behavior", () => {
   assert.deepEqual(resolveTableTabTarget(rows, 1, 2, false), { rowIndex: 1, cellIndex: 2 });
 });
 
-test("toggleListBlockLines converts ordered list to bullet list", () => {
-  const result = toggleListBlockLines(["1. a", "2. b"]);
+test("toggleListLinesAtIndent converts ordered list to bullet list", () => {
+  const result = toggleListLinesAtIndent(["1. a", "2. b"], 0);
   assert.ok(result);
   assert.equal(result.toOrdered, false);
   assert.deepEqual(result.lines, ["- a", "- b"]);
 });
 
-test("toggleListBlockLines converts bullet list to ordered with nested numbering", () => {
-  const result = toggleListBlockLines(["- a", "    - b", "    - c", "- d"]);
+test("toggleListLinesAtIndent converts bullet list to ordered with nested numbering", () => {
+  const result = toggleListLinesAtIndent(["- a", "    - b", "    - c", "- d"], 0);
   assert.ok(result);
   assert.equal(result.toOrdered, true);
-  assert.deepEqual(result.lines, ["1. a", "    1. b", "    2. c", "2. d"]);
+  assert.deepEqual(result.lines, ["1. a", "    - b", "    - c", "2. d"]);
+});
+
+test("toggleListLinesAtIndent affects only target nesting level", () => {
+  const result = toggleListLinesAtIndent(["1. a", "    1. b", "2. c"], 0);
+  assert.ok(result);
+  assert.deepEqual(result.lines, ["- a", "    1. b", "- c"]);
 });

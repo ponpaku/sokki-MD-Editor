@@ -150,37 +150,24 @@ export function resolveTableTabTarget(rows, rowIndex, cellIndex, shiftKey) {
   return { rowIndex: targetRow, cellIndex: targetCell };
 }
 
-export function toggleListBlockLines(lines) {
+export function toggleListLinesAtIndent(lines, targetIndentLen) {
   if (!Array.isArray(lines) || lines.length === 0) return null;
   const parsedLines = lines.map((line) => parseListLine(line));
-  const firstList = parsedLines.find((item) => item);
-  if (!firstList) return null;
+  const firstTarget = parsedLines.find((item) => item && item.indentLen === targetIndentLen);
+  if (!firstTarget) return null;
 
-  const toOrdered = firstList.type !== "ordered";
-  const orderedCounters = new Map();
+  const toOrdered = firstTarget.type !== "ordered";
+  let orderedCounter = 0;
   const nextLines = lines.map((line, i) => {
     const parsed = parsedLines[i];
-    if (!parsed) {
-      orderedCounters.clear();
-      return line;
-    }
-    const rawIndent = line.match(/^(\s*)/)[1];
-    const indentLen = normalizeListIndentWidth(rawIndent);
+    if (!parsed || parsed.indentLen !== targetIndentLen) return line;
 
     if (!toOrdered) {
-      return `${" ".repeat(indentLen)}- ${parsed.content}`;
+      return `${" ".repeat(targetIndentLen)}- ${parsed.content}`;
     }
-
-    for (const key of Array.from(orderedCounters.keys())) {
-      if (key > indentLen) orderedCounters.delete(key);
-    }
-    const next = (orderedCounters.get(indentLen) || 0) + 1;
-    orderedCounters.set(indentLen, next);
-    return `${" ".repeat(indentLen)}${next}. ${parsed.content}`;
+    orderedCounter += 1;
+    return `${" ".repeat(targetIndentLen)}${orderedCounter}. ${parsed.content}`;
   });
 
-  return {
-    lines: nextLines,
-    toOrdered,
-  };
+  return { lines: nextLines, toOrdered };
 }

@@ -20,7 +20,7 @@ import {
   isEmptyTableRow,
   resolveTableTabTarget,
   shouldCoalesceNativeEdit,
-  toggleListBlockLines,
+  toggleListLinesAtIndent,
   normalizeListIndentWidth,
   parseListLine,
 } from "./editor-logic.js";
@@ -471,15 +471,51 @@ function toggleListTypeSelection() {
   const start = editor.selectionStart;
   const end = editor.selectionEnd;
   const value = editor.value;
+  const { lines: allLines, offsets } = buildLineOffsets(value);
+  const currentLineIndex = value.substring(0, start).split("\n").length - 1;
 
-  const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
-  const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
-  const lastLineEnd = value.indexOf("\n", adjustedEnd);
-  const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+  let targetIndentLen = null;
+  let rangeStart;
+  let rangeEnd;
+  if (start === end) {
+    const parsedCurrent = parseListLine(allLines[currentLineIndex]);
+    if (!parsedCurrent) return false;
+    targetIndentLen = parsedCurrent.indentLen;
+
+    rangeStart = currentLineIndex;
+    while (rangeStart > 0) {
+      const line = allLines[rangeStart - 1];
+      if (line.trim().length === 0) break;
+      const parsed = parseListLine(line);
+      if (parsed && parsed.indentLen < targetIndentLen) break;
+      rangeStart--;
+    }
+    rangeEnd = currentLineIndex;
+    while (rangeEnd < allLines.length - 1) {
+      const line = allLines[rangeEnd + 1];
+      if (line.trim().length === 0) break;
+      const parsed = parseListLine(line);
+      if (parsed && parsed.indentLen < targetIndentLen) break;
+      rangeEnd++;
+    }
+  } else {
+    const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
+    const lastLineEnd = value.indexOf("\n", adjustedEnd);
+    const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+    rangeStart = value.substring(0, firstLineStart).split("\n").length - 1;
+    rangeEnd = value.substring(0, blockEnd).split("\n").length - 1;
+    const rangeLines = allLines.slice(rangeStart, rangeEnd + 1);
+    const parsedFirst = rangeLines.map((line) => parseListLine(line)).find((p) => p);
+    if (!parsedFirst) return false;
+    targetIndentLen = parsedFirst.indentLen;
+  }
+
+  const firstLineStart = offsets[rangeStart];
+  const blockEnd = offsets[rangeEnd] + allLines[rangeEnd].length;
+  const lines = allLines.slice(rangeStart, rangeEnd + 1);
   const block = value.substring(firstLineStart, blockEnd);
-  const lines = block.split("\n");
-
-  const toggled = toggleListBlockLines(lines);
+  const toggled = toggleListLinesAtIndent(lines, targetIndentLen);
   if (!toggled) return false;
   const newBlock = toggled.lines.join("\n");
   if (newBlock === block) return true;
