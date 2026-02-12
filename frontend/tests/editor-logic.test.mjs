@@ -10,6 +10,7 @@ import {
   parseListLine,
   resolveTableTabTarget,
   shouldCoalesceNativeEdit,
+  toggleListBlockLines,
 } from "../src/editor-logic.js";
 
 test("findListContext resolves <br> continuation list marker", () => {
@@ -98,4 +99,18 @@ test("table tab target resolves row/cell movement and edge behavior", () => {
   assert.deepEqual(resolveTableTabTarget(rows, 1, 0, true), { rowIndex: 0, cellIndex: 2 });
   assert.deepEqual(resolveTableTabTarget(rows, 0, 0, true), { rowIndex: 0, cellIndex: 0 });
   assert.deepEqual(resolveTableTabTarget(rows, 1, 2, false), { rowIndex: 1, cellIndex: 2 });
+});
+
+test("toggleListBlockLines converts ordered list to bullet list", () => {
+  const result = toggleListBlockLines(["1. a", "2. b"]);
+  assert.ok(result);
+  assert.equal(result.toOrdered, false);
+  assert.deepEqual(result.lines, ["- a", "- b"]);
+});
+
+test("toggleListBlockLines converts bullet list to ordered with nested numbering", () => {
+  const result = toggleListBlockLines(["- a", "    - b", "    - c", "- d"]);
+  assert.ok(result);
+  assert.equal(result.toOrdered, true);
+  assert.deepEqual(result.lines, ["1. a", "    1. b", "    2. c", "2. d"]);
 });

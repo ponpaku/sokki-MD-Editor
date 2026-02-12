@@ -20,6 +20,7 @@ import {
   isEmptyTableRow,
   resolveTableTabTarget,
   shouldCoalesceNativeEdit,
+  toggleListBlockLines,
   normalizeListIndentWidth,
   parseListLine,
 } from "./editor-logic.js";
@@ -455,6 +456,32 @@ function autoFormatListSelection() {
   });
 
   const newBlock = newLines.join("\n");
+  if (newBlock === block) return true;
+
+  editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
+  const lengthDelta = newBlock.length - block.length;
+  editor.selectionStart = Math.max(firstLineStart, start);
+  editor.selectionEnd = Math.max(firstLineStart, end + lengthDelta);
+  commitProgrammaticEdit(beforeSnapshot);
+  return true;
+}
+
+function toggleListTypeSelection() {
+  const beforeSnapshot = captureEditorSnapshot();
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const value = editor.value;
+
+  const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
+  const lastLineEnd = value.indexOf("\n", adjustedEnd);
+  const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+  const block = value.substring(firstLineStart, blockEnd);
+  const lines = block.split("\n");
+
+  const toggled = toggleListBlockLines(lines);
+  if (!toggled) return false;
+  const newBlock = toggled.lines.join("\n");
   if (newBlock === block) return true;
 
   editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
@@ -1047,6 +1074,9 @@ editor.addEventListener("keydown", (e) => {
       e.preventDefault();
       handleRedo();
       return;
+    } else if (e.shiftKey && (e.code === "Digit7" || key === "7")) {
+      e.preventDefault();
+      if (toggleListTypeSelection()) return;
     } else if (key === "l" && e.shiftKey) {
       e.preventDefault();
       if (autoFormatListSelection()) return;
