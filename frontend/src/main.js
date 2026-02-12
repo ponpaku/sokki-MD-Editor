@@ -120,6 +120,16 @@ function handleNativeInputChange(e) {
       typeof e?.inputType === "string" && e.inputType.length > 0
         ? e.inputType
         : pendingInputType;
+    if (inputType === "historyUndo" || inputType === "historyRedo") {
+      // Native history events are handled by beforeinput routing when possible.
+      // Avoid treating them as normal edits and corrupting custom undo/redo stacks.
+      pendingInputType = "unknown";
+      lastKnownSnapshot = currentSnapshot;
+      nativeEditGroup = null;
+      updatePreview();
+      markDirty();
+      return;
+    }
     const canCoalesce = shouldCoalesceNativeEdit(nativeEditGroup, inputType, now - (nativeEditGroup?.lastAt || 0));
     if (!canCoalesce) {
       pushHistory(undoStack, lastKnownSnapshot);
@@ -1202,7 +1212,17 @@ editor.addEventListener("keydown", (e) => {
 
 // --- User Input ---
 editor.addEventListener("beforeinput", (e) => {
-  pendingInputType = typeof e?.inputType === "string" ? e.inputType : "unknown";
+  const inputType = typeof e?.inputType === "string" ? e.inputType : "unknown";
+  pendingInputType = inputType;
+  if (inputType !== "historyUndo" && inputType !== "historyRedo") return;
+  if (!e.cancelable) return;
+  e.preventDefault();
+  if (inputType === "historyUndo") {
+    handleUndo();
+  } else {
+    handleRedo();
+  }
+  pendingInputType = "unknown";
 });
 
 editor.addEventListener("input", (e) => {
