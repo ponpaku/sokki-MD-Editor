@@ -869,8 +869,22 @@ function handleEnterKey(e) {
   if (fullCurrentLine.trim().startsWith("|")) {
     e.preventDefault();
     if (isEmptyTableRow(fullCurrentLine)) {
-      editor.value = value.substring(0, lineStart) + value.substring(lineEnd);
-      editor.selectionStart = editor.selectionEnd = lineStart;
+      let newValue;
+      let newPos;
+      if (lineEnd < value.length) {
+        // Remove row plus trailing newline.
+        newValue = value.substring(0, lineStart) + value.substring(lineEnd + 1);
+        newPos = lineStart;
+      } else if (lineStart > 0) {
+        // Last row: remove preceding newline too.
+        newValue = value.substring(0, lineStart - 1) + value.substring(lineEnd);
+        newPos = lineStart - 1;
+      } else {
+        newValue = "";
+        newPos = 0;
+      }
+      editor.value = newValue;
+      editor.selectionStart = editor.selectionEnd = Math.max(0, Math.min(newPos, newValue.length));
       commitProgrammaticEdit(beforeSnapshot);
       return;
     }
