@@ -507,12 +507,27 @@ function handleEnterKey(e) {
   const value = editor.value;
 
   const previousNewline = value.lastIndexOf("\n", start - 1);
+  const lineStart = previousNewline + 1;
+  const nextNewline = value.indexOf("\n", start);
+  const lineEnd = nextNewline === -1 ? value.length : nextNewline;
+  const fullCurrentLine = value.substring(lineStart, lineEnd);
   const currentLine = value.substring(previousNewline + 1, start);
 
   // 1. Table Row Check
-  if (currentLine.trim().startsWith("|")) {
+  if (fullCurrentLine.trim().startsWith("|")) {
     e.preventDefault();
-    const colCount = (currentLine.match(/\|/g) || []).length - 1;
+    const pipeCount = (fullCurrentLine.match(/\|/g) || []).length;
+    const isEmptyTableRow =
+      pipeCount >= 2 &&
+      fullCurrentLine.replace(/\|/g, "").trim().length === 0;
+    if (isEmptyTableRow) {
+      editor.value = value.substring(0, lineStart) + value.substring(lineEnd);
+      editor.selectionStart = editor.selectionEnd = lineStart;
+      updatePreview();
+      markDirty();
+      return;
+    }
+    const colCount = pipeCount - 1;
     if (colCount > 0) {
       const newRow =
         "\n| " + Array(colCount).fill(" ").join(" | ") + " |";
@@ -594,9 +609,6 @@ function handleEnterKey(e) {
       markDirty();
     } else {
       e.preventDefault();
-      const nextNewline = value.indexOf("\n", start);
-      const lineEnd = nextNewline === -1 ? value.length : nextNewline;
-      const fullCurrentLine = value.substring(previousNewline + 1, lineEnd);
       const hasNextLine = lineEnd < value.length;
       const nextLineStart = hasNextLine ? lineEnd + 1 : value.length;
       const nextLineBreak = hasNextLine ? value.indexOf("\n", nextLineStart) : -1;
