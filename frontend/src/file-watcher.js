@@ -42,11 +42,11 @@ export async function startWatching(filePath) {
 
   try {
     unwatchFn = await watch(filePath, (event) => {
-      if (!isContentChange(event)) return;
       if (suppressNext) {
         clearSuppression();
         return;
       }
+      if (!isContentChange(event)) return;
       if (onExternalChange) {
         onExternalChange(filePath);
       }

@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import "./style.css";
 import { actionOpen, actionSave, actionPickSaveAsPath } from "./file-ops.js";
-import { scheduleSave, clearSnapshot, checkRestore } from "./autosave.js";
+import { scheduleSave, cancelScheduledSave, clearSnapshot, checkRestore } from "./autosave.js";
 import { t, applyTranslations, renderHelp } from "./i18n.js";
 import { exportDocx, exportTxt, exportHtml } from "./export.js";
 import { openExportModal } from "./export-modal.js";
@@ -195,10 +195,16 @@ export function setStatus(text) {
 }
 
 function markDirty() {
+  const wasDirty = state.dirty;
   state.dirty = cleanValue == null ? true : editor.value !== cleanValue;
   updateTitle();
   if (state.dirty) {
     scheduleSave(editor.value, state.currentPath);
+  } else {
+    cancelScheduledSave();
+    if (wasDirty) {
+      void clearSnapshot();
+    }
   }
 }
 
