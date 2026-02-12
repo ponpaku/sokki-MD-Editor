@@ -54,6 +54,7 @@ const redoStack = [];
 let lastKnownSnapshot = null;
 let cleanValue = "";
 let nativeEditGroup = null;
+let pendingInputType = "unknown";
 
 function captureEditorSnapshot() {
   return {
@@ -92,6 +93,7 @@ function resetEditorHistory() {
   redoStack.length = 0;
   lastKnownSnapshot = captureEditorSnapshot();
   nativeEditGroup = null;
+  pendingInputType = "unknown";
 }
 
 function commitProgrammaticEdit(beforeSnapshot) {
@@ -113,7 +115,10 @@ function handleNativeInputChange(e) {
   const currentSnapshot = captureEditorSnapshot();
   if (lastKnownSnapshot && currentSnapshot.value !== lastKnownSnapshot.value) {
     const now = Date.now();
-    const inputType = typeof e?.inputType === "string" ? e.inputType : "unknown";
+    const inputType =
+      typeof e?.inputType === "string" && e.inputType.length > 0
+        ? e.inputType
+        : pendingInputType;
     const canCoalesce = shouldCoalesceNativeEdit(nativeEditGroup, inputType, now - (nativeEditGroup?.lastAt || 0));
     if (!canCoalesce) {
       pushHistory(undoStack, lastKnownSnapshot);
@@ -126,6 +131,7 @@ function handleNativeInputChange(e) {
       nativeEditGroup.lastAt = now;
     }
   }
+  pendingInputType = "unknown";
   lastKnownSnapshot = currentSnapshot;
   updatePreview();
   markDirty();
@@ -1098,8 +1104,12 @@ editor.addEventListener("keydown", (e) => {
 });
 
 // --- User Input ---
-editor.addEventListener("input", () => {
-  handleNativeInputChange();
+editor.addEventListener("beforeinput", (e) => {
+  pendingInputType = typeof e?.inputType === "string" ? e.inputType : "unknown";
+});
+
+editor.addEventListener("input", (e) => {
+  handleNativeInputChange(e);
 });
 
 // --- Scroll Sync ---

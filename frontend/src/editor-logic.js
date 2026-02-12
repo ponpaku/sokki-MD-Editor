@@ -1,9 +1,13 @@
 const LIST_REGEX = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
 const LIST_LINE_REGEX = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s(.*)$/;
-const COALESCIBLE_INPUT_TYPES = new Set([
-  "insertText",
-  "deleteContentBackward",
-  "deleteContentForward",
+const NON_COALESCIBLE_INPUT_TYPES = new Set([
+  "insertFromPaste",
+  "insertFromDrop",
+  "insertReplacementText",
+  "insertFromYank",
+  "deleteByCut",
+  "historyUndo",
+  "historyRedo",
 ]);
 
 export function parseListLine(line) {
@@ -105,7 +109,10 @@ export function isEmptyTableRow(line) {
 }
 
 export function isCoalescibleNativeEditType(inputType) {
-  return COALESCIBLE_INPUT_TYPES.has(inputType);
+  if (typeof inputType !== "string" || inputType.length === 0) return true;
+  if (NON_COALESCIBLE_INPUT_TYPES.has(inputType)) return false;
+  if (inputType.startsWith("history")) return false;
+  return true;
 }
 
 export function shouldCoalesceNativeEdit(previousGroup, inputType, deltaMs) {

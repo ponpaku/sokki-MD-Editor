@@ -86,6 +86,8 @@ test("native coalescing applies only to matching input type within window", () =
   assert.equal(shouldCoalesceNativeEdit(group, "insertText", 300), true);
   assert.equal(shouldCoalesceNativeEdit(group, "deleteContentBackward", 300), false);
   assert.equal(shouldCoalesceNativeEdit(group, "insertFromPaste", 300), false);
+  assert.equal(shouldCoalesceNativeEdit({ inputType: "insertCompositionText" }, "insertCompositionText", 300), true);
+  assert.equal(shouldCoalesceNativeEdit({ inputType: "unknown" }, "unknown", 300), true);
   assert.equal(shouldCoalesceNativeEdit(group, "insertText", 900), false);
 });
 
