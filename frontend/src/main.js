@@ -270,12 +270,14 @@ function parseListLine(line) {
   const match = line.match(/^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s(.*)$/);
   if (!match) return null;
   const marker = match[2];
+  const orderedMatch = marker.match(/^(\d+)\.$/);
   const taskMatch = marker.match(/^([-*])\s\[([ xX])\]$/);
   return {
     indentLen: match[1].length,
     marker,
     content: match[3],
     type: /^\d+\.$/.test(marker) ? "ordered" : taskMatch ? "task" : "bullet",
+    orderedNumber: orderedMatch ? parseInt(orderedMatch[1], 10) : null,
     bulletChar: marker[0],
     checked: taskMatch ? taskMatch[2].toLowerCase() === "x" : false,
   };
@@ -318,6 +320,20 @@ function findTemplateAtIndent(fullLines, lineIndex, targetIndentLen, excludedSta
   return null;
 }
 
+function findPreviousOrderedNumberAtIndent(fullLines, lineIndex, targetIndentLen, excludedStart, excludedEnd) {
+  let blockStart = lineIndex;
+  while (blockStart > 0 && fullLines[blockStart - 1].trim().length > 0) {
+    blockStart--;
+  }
+  for (let i = lineIndex - 1; i >= blockStart; i--) {
+    if (i >= excludedStart && i < excludedEnd) continue;
+    const parsed = parseListLine(fullLines[i]);
+    if (!parsed || parsed.indentLen !== targetIndentLen || parsed.type !== "ordered") continue;
+    return parsed.orderedNumber;
+  }
+  return null;
+}
+
 function handleListIndent(e) {
   const start = editor.selectionStart;
   const end = editor.selectionEnd;
@@ -342,6 +358,36 @@ function handleListIndent(e) {
 
   let newLines;
   let cursorDelta = 0;
+  const orderedCounters = new Map();
+
+  function resolveMarkerForTarget(parsed, template, targetIndentLen, lineIndex) {
+    if (!template) return parsed.marker;
+    if (template.type !== "ordered") {
+      return markerFromTemplate(parsed, template);
+    }
+    const counterKey = `${targetIndentLen}`;
+    const assigned = orderedCounters.get(counterKey);
+    if (assigned != null) {
+      const next = assigned + 1;
+      orderedCounters.set(counterKey, next);
+      return `${next}.`;
+    }
+    const previousNumber = findPreviousOrderedNumberAtIndent(
+      fullLines,
+      lineIndex,
+      targetIndentLen,
+      firstLineIndex,
+      firstLineIndex + lines.length,
+    );
+    if (previousNumber != null) {
+      const next = previousNumber + 1;
+      orderedCounters.set(counterKey, next);
+      return `${next}.`;
+    }
+    const seed = template.orderedNumber || 1;
+    orderedCounters.set(counterKey, seed);
+    return `${seed}.`;
+  }
 
   if (e.shiftKey) {
     // Outdent: remove up to 4 leading spaces from list lines
@@ -361,7 +407,7 @@ function handleListIndent(e) {
           firstLineIndex,
           firstLineIndex + lines.length,
         );
-        const marker = template ? markerFromTemplate(parsed, template) : parsed.marker;
+        const marker = resolveMarkerForTarget(parsed, template, targetIndentLen, firstLineIndex + i);
         return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
       }
       return line;
@@ -381,7 +427,7 @@ function handleListIndent(e) {
         firstLineIndex,
         firstLineIndex + lines.length,
       );
-      const marker = template ? markerFromTemplate(parsed, template) : parsed.marker;
+      const marker = resolveMarkerForTarget(parsed, template, targetIndentLen, firstLineIndex + i);
       return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
     });
   }
