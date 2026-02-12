@@ -37,6 +37,111 @@ export const state = {
   lastSavedAt: null,
 };
 
+const HISTORY_LIMIT = 200;
+const undoStack = [];
+const redoStack = [];
+let lastKnownSnapshot = null;
+let cleanValue = "";
+
+function captureEditorSnapshot() {
+  return {
+    value: editor.value,
+    start: editor.selectionStart,
+    end: editor.selectionEnd,
+  };
+}
+
+function cloneSnapshot(snapshot) {
+  return {
+    value: snapshot.value,
+    start: snapshot.start,
+    end: snapshot.end,
+  };
+}
+
+function applyEditorSnapshot(snapshot) {
+  editor.value = snapshot.value;
+  const maxPos = snapshot.value.length;
+  editor.selectionStart = Math.min(snapshot.start, maxPos);
+  editor.selectionEnd = Math.min(snapshot.end, maxPos);
+}
+
+function pushHistory(stack, snapshot) {
+  if (stack.length > 0 && stack[stack.length - 1].value === snapshot.value) {
+    stack[stack.length - 1] = cloneSnapshot(snapshot);
+    return;
+  }
+  stack.push(cloneSnapshot(snapshot));
+  if (stack.length > HISTORY_LIMIT) stack.shift();
+}
+
+function resetEditorHistory() {
+  undoStack.length = 0;
+  redoStack.length = 0;
+  lastKnownSnapshot = captureEditorSnapshot();
+}
+
+function commitProgrammaticEdit(beforeSnapshot) {
+  const currentSnapshot = captureEditorSnapshot();
+  if (currentSnapshot.value === beforeSnapshot.value) {
+    lastKnownSnapshot = currentSnapshot;
+    return false;
+  }
+  pushHistory(undoStack, beforeSnapshot);
+  redoStack.length = 0;
+  lastKnownSnapshot = currentSnapshot;
+  updatePreview();
+  markDirty();
+  return true;
+}
+
+function handleNativeInputChange() {
+  const currentSnapshot = captureEditorSnapshot();
+  if (lastKnownSnapshot && currentSnapshot.value !== lastKnownSnapshot.value) {
+    pushHistory(undoStack, lastKnownSnapshot);
+    redoStack.length = 0;
+  }
+  lastKnownSnapshot = currentSnapshot;
+  updatePreview();
+  markDirty();
+}
+
+function handleUndo() {
+  if (undoStack.length === 0) return false;
+  const currentSnapshot = captureEditorSnapshot();
+  const previousSnapshot = undoStack.pop();
+  pushHistory(redoStack, currentSnapshot);
+  applyEditorSnapshot(previousSnapshot);
+  lastKnownSnapshot = captureEditorSnapshot();
+  updatePreview();
+  markDirty();
+  return true;
+}
+
+function handleRedo() {
+  if (redoStack.length === 0) return false;
+  const currentSnapshot = captureEditorSnapshot();
+  const nextSnapshot = redoStack.pop();
+  pushHistory(undoStack, currentSnapshot);
+  applyEditorSnapshot(nextSnapshot);
+  lastKnownSnapshot = captureEditorSnapshot();
+  updatePreview();
+  markDirty();
+  return true;
+}
+
+function setCleanValue(value = editor.value) {
+  cleanValue = value;
+  state.dirty = false;
+  updateTitle();
+}
+
+function setUnknownDirtyValue() {
+  cleanValue = null;
+  state.dirty = true;
+  updateTitle();
+}
+
 // --- Markdown Rendering ---
 export function updatePreview() {
   let html = marked.parse(editor.value);
@@ -56,14 +161,17 @@ export function setStatus(text) {
 }
 
 function markDirty() {
-  state.dirty = true;
+  state.dirty = cleanValue == null ? true : editor.value !== cleanValue;
   updateTitle();
-  scheduleSave(editor.value, state.currentPath);
+  if (state.dirty) {
+    scheduleSave(editor.value, state.currentPath);
+  }
 }
 
 // --- Task List Checkbox Toggle ---
 preview.addEventListener("click", (e) => {
   if (e.target.tagName === "INPUT" && e.target.type === "checkbox" && e.target.dataset.index != null) {
+    const beforeSnapshot = captureEditorSnapshot();
     const cbIdx = parseInt(e.target.dataset.index);
     const text = editor.value;
     let count = 0;
@@ -74,8 +182,7 @@ preview.addEventListener("click", (e) => {
       return match;
     });
     editor.value = newText;
-    updatePreview();
-    markDirty();
+    commitProgrammaticEdit(beforeSnapshot);
   }
 });
 
@@ -107,16 +214,17 @@ themeToggle.addEventListener("click", () => {
 
 // --- Text Insertion Helpers ---
 function insertText(text) {
+  const beforeSnapshot = captureEditorSnapshot();
   const start = editor.selectionStart;
   const end = editor.selectionEnd;
   editor.value =
     editor.value.substring(0, start) + text + editor.value.substring(end);
   editor.selectionStart = editor.selectionEnd = start + text.length;
-  updatePreview();
-  markDirty();
+  commitProgrammaticEdit(beforeSnapshot);
 }
 
 function toggleFormat(prefix, suffix) {
+  const beforeSnapshot = captureEditorSnapshot();
   if (!suffix) suffix = prefix;
 
   const start = editor.selectionStart;
@@ -137,8 +245,7 @@ function toggleFormat(prefix, suffix) {
     editor.selectionEnd = start + newText.length;
   }
 
-  updatePreview();
-  markDirty();
+  commitProgrammaticEdit(beforeSnapshot);
 }
 
 // --- Shorthand Logic ---
@@ -150,6 +257,7 @@ function handleShortcutKey(e) {
   // 1. Header Shortcut (#1 to #6)
   const headerMatch = textBefore.match(/[#＃]([1-6１-６])$/);
   if (headerMatch) {
+    const beforeSnapshot = captureEditorSnapshot();
     e.preventDefault();
     let levelChar = headerMatch[1];
     if ("１２３４５６".includes(levelChar)) {
@@ -166,14 +274,14 @@ function handleShortcutKey(e) {
     editor.value = beforeMatch + hashes + afterMatch;
     editor.selectionStart = editor.selectionEnd =
       beforeMatch.length + hashes.length;
-    updatePreview();
-    markDirty();
+    commitProgrammaticEdit(beforeSnapshot);
     return true;
   }
 
   // 2. Table Shortcut (t1 to t9)
   const tableMatch = textBefore.match(/[tｔ]([1-9１-９])$/);
   if (tableMatch) {
+    const beforeSnapshot = captureEditorSnapshot();
     e.preventDefault();
     let numChar = tableMatch[1];
     if ("１２３４５６７８９".includes(numChar)) {
@@ -199,14 +307,14 @@ function handleShortcutKey(e) {
     editor.selectionStart = editor.selectionEnd =
       beforeMatch.length + cursorOffset;
 
-    updatePreview();
-    markDirty();
+    commitProgrammaticEdit(beforeSnapshot);
     return true;
   }
 
   // 3. Task List Shortcut ([] → - [ ] )
   const taskMatch = textBefore.match(/\[\]$/);
   if (taskMatch) {
+    const beforeSnapshot = captureEditorSnapshot();
     e.preventDefault();
     const beforeMatch = value.substring(0, start - taskMatch[0].length);
     const afterMatch = value.substring(start);
@@ -214,14 +322,14 @@ function handleShortcutKey(e) {
     editor.value = beforeMatch + taskMarker + afterMatch;
     editor.selectionStart = editor.selectionEnd =
       beforeMatch.length + taskMarker.length;
-    updatePreview();
-    markDirty();
+    commitProgrammaticEdit(beforeSnapshot);
     return true;
   }
   return false;
 }
 
 function addColumn(e) {
+  const beforeSnapshot = captureEditorSnapshot();
   const start = editor.selectionStart;
   const value = editor.value;
   const lines = value.split("\n");
@@ -261,8 +369,7 @@ function addColumn(e) {
   }
 
   editor.value = lines.join("\n");
-  updatePreview();
-  markDirty();
+  commitProgrammaticEdit(beforeSnapshot);
   return true;
 }
 
@@ -335,6 +442,7 @@ function findPreviousOrderedNumberAtIndent(fullLines, lineIndex, targetIndentLen
 }
 
 function handleListIndent(e) {
+  const beforeSnapshot = captureEditorSnapshot();
   const start = editor.selectionStart;
   const end = editor.selectionEnd;
   const value = editor.value;
@@ -443,8 +551,7 @@ function handleListIndent(e) {
   editor.selectionStart = newStart;
   editor.selectionEnd = newEnd;
 
-  updatePreview();
-  markDirty();
+  commitProgrammaticEdit(beforeSnapshot);
   return true;
 }
 
@@ -503,6 +610,7 @@ function getShiftEnterContinuationIndent(value, cursorPos) {
 }
 
 function handleEnterKey(e) {
+  const beforeSnapshot = captureEditorSnapshot();
   const start = editor.selectionStart;
   const value = editor.value;
 
@@ -523,8 +631,7 @@ function handleEnterKey(e) {
     if (isEmptyTableRow) {
       editor.value = value.substring(0, lineStart) + value.substring(lineEnd);
       editor.selectionStart = editor.selectionEnd = lineStart;
-      updatePreview();
-      markDirty();
+      commitProgrammaticEdit(beforeSnapshot);
       return;
     }
     const colCount = pipeCount - 1;
@@ -563,14 +670,14 @@ function handleEnterKey(e) {
           }
           editor.value = value.substring(0, lineStart) + nextMarker + value.substring(start);
           editor.selectionStart = editor.selectionEnd = lineStart + nextMarker.length;
-          updatePreview();
-          markDirty();
+          commitProgrammaticEdit(beforeSnapshot);
           return;
         }
       }
       editor.value =
         value.substring(0, lineStart) + value.substring(start);
       editor.selectionStart = editor.selectionEnd = lineStart;
+      commitProgrammaticEdit(beforeSnapshot);
     } else {
       if (match[2].match(/\d+\./)) {
         const currentNum = parseInt(match[2]);
@@ -583,8 +690,6 @@ function handleEnterKey(e) {
         insertText("\n" + nextMarker);
       }
     }
-    updatePreview();
-    markDirty();
   } else {
     // 3. Check if we're in a <br> continuation of a list
     const brListMatch = findListContext(value, start);
@@ -605,8 +710,6 @@ function handleEnterKey(e) {
           insertText("\n" + nextMarker);
         }
       }
-      updatePreview();
-      markDirty();
     } else {
       e.preventDefault();
       const hasNextLine = lineEnd < value.length;
@@ -621,8 +724,7 @@ function handleEnterKey(e) {
         // Keep the cursor on a separator line while adding one blank line above/below it.
         editor.value = value.substring(0, start) + "\n\n" + value.substring(start);
         editor.selectionStart = editor.selectionEnd = start + 1;
-        updatePreview();
-        markDirty();
+        commitProgrammaticEdit(beforeSnapshot);
       } else {
         insertText("\n\n");
       }
@@ -644,11 +746,11 @@ async function handleOpen() {
     const result = await actionOpen();
     if (!result) return;
     state.currentPath = result.path;
-    state.dirty = false;
     state.lastSavedAt = Date.now();
     editor.value = result.text;
     updatePreview();
-    updateTitle();
+    resetEditorHistory();
+    setCleanValue(result.text);
     setStatus(t("status.opened", result.path.split(/[\\/]/).pop()));
     await startWatching(result.path);
   } catch (err) {
@@ -664,9 +766,8 @@ async function handleSave() {
   try {
     suppressNextChange();
     await actionSave(state.currentPath, editor.value);
-    state.dirty = false;
+    setCleanValue(editor.value);
     state.lastSavedAt = Date.now();
-    updateTitle();
     await clearSnapshot();
     setStatus(t("status.saved", state.currentPath.split(/[\\/]/).pop()));
   } catch (err) {
@@ -689,9 +790,8 @@ async function handleSaveAs() {
     }
     await actionSave(path, editor.value);
     state.currentPath = path;
-    state.dirty = false;
+    setCleanValue(editor.value);
     state.lastSavedAt = Date.now();
-    updateTitle();
     await clearSnapshot();
     setStatus(t("status.saved", path.split(/[\\/]/).pop()));
     if (!wasWatchingSamePath) {
@@ -771,6 +871,19 @@ exportHtmlBtn.addEventListener("click", handleExportHtml);
 editor.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey) {
     const key = e.key.toLowerCase();
+    if (key === "z") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+      return;
+    } else if (key === "y") {
+      e.preventDefault();
+      handleRedo();
+      return;
+    }
     if (key === "o") {
       e.preventDefault();
       handleOpen();
@@ -821,8 +934,7 @@ editor.addEventListener("keydown", (e) => {
 
 // --- User Input ---
 editor.addEventListener("input", () => {
-  updatePreview();
-  markDirty();
+  handleNativeInputChange();
 });
 
 // --- Scroll Sync ---
@@ -893,6 +1005,7 @@ export function getEditorValue() {
 export function setEditorValue(text) {
   editor.value = text;
   updatePreview();
+  resetEditorHistory();
 }
 
 // --- Open file from path (file association / single-instance) ---
@@ -901,10 +1014,10 @@ async function openFileFromPath(filePath) {
     const text = await readTextFile(filePath);
     editor.value = text;
     state.currentPath = filePath;
-    state.dirty = false;
     state.lastSavedAt = Date.now();
     updatePreview();
-    updateTitle();
+    resetEditorHistory();
+    setCleanValue(text);
     setStatus(t("status.opened", filePath.split(/[\\/]/).pop()));
     await startWatching(filePath);
   } catch (err) {
@@ -937,6 +1050,8 @@ async function init() {
         // No unsaved changes — silently reload
         editor.value = text;
         updatePreview();
+        resetEditorHistory();
+        setCleanValue(text);
         setStatus(t("status.reloaded"));
       } else {
         // Unsaved changes — ask user
@@ -949,9 +1064,9 @@ async function init() {
         if (filePath !== state.currentPath) return;
         if (reload) {
           editor.value = text;
-          state.dirty = false;
           updatePreview();
-          updateTitle();
+          resetEditorHistory();
+          setCleanValue(text);
           await clearSnapshot();
           setStatus(t("status.reloaded"));
         }
@@ -977,9 +1092,9 @@ async function init() {
     if (restored) {
       editor.value = restored.text;
       state.currentPath = restored.currentPath;
-      state.dirty = true;
       updatePreview();
-      updateTitle();
+      resetEditorHistory();
+      setUnknownDirtyValue();
       setStatus(t("status.restored"));
       if (restored.currentPath) await startWatching(restored.currentPath);
       return;
@@ -988,7 +1103,8 @@ async function init() {
     console.error("Restore failed:", err);
   }
   updatePreview();
-  updateTitle();
+  resetEditorHistory();
+  setCleanValue(editor.value);
 }
 
 init();
