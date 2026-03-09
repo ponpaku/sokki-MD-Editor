@@ -1179,7 +1179,7 @@ async function handleSaveAs() {
   let suppressedSamePathSave = false;
   try {
     const previousPath = state.currentPath;
-    const path = await actionPickSaveAsPath(previousPath);
+    const path = await actionPickSaveAsPath(previousPath, editor.value);
     if (!path) return;
     const wasWatchingSamePath = previousPath === path;
     if (wasWatchingSamePath) {
