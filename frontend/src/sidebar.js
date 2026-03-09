@@ -6,10 +6,12 @@ import { t } from "./i18n.js";
 const RECENT_KEY = "sokki-recent-files";
 const SIDEBAR_VISIBLE_KEY = "sokki-sidebar-visible";
 const SIDEBAR_TAB_KEY = "sokki-sidebar-tab";
-const WORKSPACE_KEY = "sokki-workspace-folder";
-const WORKSPACE_COLLAPSED_KEY = "sokki-workspace-collapsed";
+const WORKSPACE_FOLDERS_KEY = "sokki-workspace-folders";
 const RECENT_COLLAPSED_KEY = "sokki-recent-collapsed";
+const RECENT_HEIGHT_KEY = "sokki-recent-height";
 const RECENT_MAX = 20;
+const RECENT_HEIGHT_DEFAULT = 200;
+const RECENT_HEIGHT_MIN = 60;
 
 let tocDebounceTimer = null;
 let deps = null;
@@ -56,97 +58,136 @@ export function addToRecentFiles(filePath) {
   recents.unshift(filePath);
   if (recents.length > RECENT_MAX) recents = recents.slice(0, RECENT_MAX);
   localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
-  // Only re-render the recent section, not the whole panel
   const recentBody = document.getElementById("recent-section-body");
   if (recentBody) renderRecentBody(recentBody);
 }
 
-export async function renderFileTree(folderPath) {
-  const treeRoot = document.getElementById("workspace-tree-root");
-  if (!treeRoot) return;
-  await loadTreeInto(treeRoot, folderPath);
-}
-
-async function loadTreeInto(treeRoot, folderPath) {
-  treeRoot.innerHTML = '<div class="sidebar-empty-msg">読み込み中...</div>';
-  if (!folderPath) { treeRoot.innerHTML = ""; return; }
-  try {
-    const tree = await buildMdTree(folderPath);
-    treeRoot.innerHTML = "";
-    if (tree.length === 0) {
-      treeRoot.innerHTML = '<div class="sidebar-empty-msg">.md ファイルなし</div>';
-      return;
-    }
-    treeRoot.appendChild(renderTreeNodes(tree));
-  } catch (err) {
-    console.error("renderFileTree failed:", err);
-    treeRoot.innerHTML = `<div class="sidebar-empty-msg">${String(err)}</div>`;
-  }
-}
-
-// --- Internal: render whole Files panel ---
+// --- Internal: Files panel ---
 
 function renderFilesPanel() {
-  const container = document.getElementById("sidebar-sections");
-  if (!container) return;
-  container.innerHTML = "";
+  const panel = document.getElementById("sidebar-files");
+  if (!panel) return;
 
-  const workspacePath = localStorage.getItem(WORKSPACE_KEY);
-
-  // --- Workspace section ---
-  const workspaceCollapsed = localStorage.getItem(WORKSPACE_COLLAPSED_KEY) === "true";
-  const wsSection = createSection({
-    id: "workspace-section",
-    title: workspacePath ? workspacePath.split(/[\\/]/).pop() : t("sidebar.openFolder"),
-    collapsed: workspaceCollapsed,
-    expandable: true,
-    actions: workspacePath
-      ? [{ label: "✕", title: "Close folder", onClick: handleCloseWorkspace }]
-      : [],
-    onToggle: (collapsed) => localStorage.setItem(WORKSPACE_COLLAPSED_KEY, String(collapsed)),
+  // Remove previously rendered dynamic areas (toolbar stays)
+  ["sidebar-workspace-area", "sidebar-resize-handle", "sidebar-recent-area"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
   });
 
-  if (workspacePath) {
-    const treeRoot = document.createElement("div");
-    treeRoot.id = "workspace-tree-root";
-    treeRoot.className = "file-tree-root";
-    wsSection.body.appendChild(treeRoot);
-    container.appendChild(wsSection.el);
-    // Pass element reference directly — no getElementById needed
-    loadTreeInto(treeRoot, workspacePath);
-  } else {
+  const folders = loadWorkspaceFolders();
+
+  // --- Workspace area (scrollable, takes remaining space) ---
+  const workspaceArea = document.createElement("div");
+  workspaceArea.id = "sidebar-workspace-area";
+
+  if (folders.length === 0) {
     const hint = document.createElement("div");
     hint.className = "sidebar-empty-msg";
     hint.textContent = t("sidebar.noWorkspace");
-    wsSection.body.appendChild(hint);
-    container.appendChild(wsSection.el);
+    workspaceArea.appendChild(hint);
+  } else {
+    for (const folderPath of folders) {
+      const folderEl = buildFolderSection(folderPath);
+      workspaceArea.appendChild(folderEl.el);
+    }
   }
 
-  // --- Recent Files section ---
+  panel.appendChild(workspaceArea);
+
+  // Start async tree loads (after appending to DOM for safety)
+  if (folders.length > 0) {
+    workspaceArea.querySelectorAll(".file-tree-root[data-folder]").forEach((treeRoot) => {
+      loadTreeInto(treeRoot, treeRoot.dataset.folder);
+    });
+  }
+
+  // --- Resize handle ---
+  const handle = document.createElement("div");
+  handle.id = "sidebar-resize-handle";
+  initResizeHandle(handle);
+  panel.appendChild(handle);
+
+  // --- Recent Files area (fixed height, resizable) ---
+  const recentArea = document.createElement("div");
+  recentArea.id = "sidebar-recent-area";
+  const savedHeight = parseInt(localStorage.getItem(RECENT_HEIGHT_KEY), 10) || RECENT_HEIGHT_DEFAULT;
+  recentArea.style.height = `${Math.max(RECENT_HEIGHT_MIN, savedHeight)}px`;
+
   const recentCollapsed = localStorage.getItem(RECENT_COLLAPSED_KEY) === "true";
   const recentSection = createSection({
     id: "recent-section",
     title: t("sidebar.recentFiles"),
     collapsed: recentCollapsed,
-    expandable: true,
     onToggle: (collapsed) => localStorage.setItem(RECENT_COLLAPSED_KEY, String(collapsed)),
   });
-
   recentSection.body.id = "recent-section-body";
   renderRecentBody(recentSection.body);
-  container.appendChild(recentSection.el);
+  recentArea.appendChild(recentSection.el);
+  panel.appendChild(recentArea);
 }
 
-/**
- * Create a VSCode-style collapsible section.
- * Returns { el, body } where el is the section root and body is the content container.
- */
-function createSection({ id, title, collapsed, expandable, actions = [], onToggle }) {
+function buildFolderSection(folderPath) {
+  const collapseKey = `sokki-folder-collapsed-${folderPath}`;
+  const collapsed = localStorage.getItem(collapseKey) === "true";
+
+  const section = createSection({
+    title: folderPath.split(/[\\/]/).pop(),
+    collapsed,
+    actions: [
+      { label: "✕", title: t("sidebar.closeFolder"), onClick: () => handleCloseFolder(folderPath) },
+    ],
+    onToggle: (c) => localStorage.setItem(collapseKey, String(c)),
+  });
+
+  const treeRoot = document.createElement("div");
+  treeRoot.className = "file-tree-root";
+  treeRoot.dataset.folder = folderPath;
+  section.body.appendChild(treeRoot);
+
+  return section;
+}
+
+// --- Resize handle ---
+
+function initResizeHandle(handle) {
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    handle.classList.add("dragging");
+
+    const recentArea = document.getElementById("sidebar-recent-area");
+    if (!recentArea) return;
+
+    const startY = e.clientY;
+    const startHeight = recentArea.getBoundingClientRect().height;
+
+    const onMouseMove = (e) => {
+      const delta = startY - e.clientY; // drag up = increase height
+      const newHeight = Math.max(RECENT_HEIGHT_MIN, startHeight + delta);
+      recentArea.style.height = `${newHeight}px`;
+    };
+
+    const onMouseUp = () => {
+      handle.classList.remove("dragging");
+      const recentArea = document.getElementById("sidebar-recent-area");
+      if (recentArea) {
+        localStorage.setItem(RECENT_HEIGHT_KEY, String(Math.round(recentArea.getBoundingClientRect().height)));
+      }
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+}
+
+// --- VSCode-style collapsible section ---
+
+function createSection({ id, title, collapsed, actions = [], onToggle }) {
   const section = document.createElement("div");
-  section.className = "sidebar-section" + (expandable ? " expandable" : "") + (collapsed ? " collapsed" : "");
+  section.className = "sidebar-section" + (collapsed ? " collapsed" : "");
   if (id) section.id = id;
 
-  // Header
   const header = document.createElement("div");
   header.className = "sidebar-section-header";
 
@@ -157,11 +198,11 @@ function createSection({ id, title, collapsed, expandable, actions = [], onToggl
   const titleEl = document.createElement("span");
   titleEl.className = "sidebar-section-title-text";
   titleEl.textContent = title;
+  titleEl.title = title;
 
   header.appendChild(chevron);
   header.appendChild(titleEl);
 
-  // Action buttons (visible on hover)
   if (actions.length > 0) {
     const actionsEl = document.createElement("span");
     actionsEl.className = "sidebar-section-actions";
@@ -170,20 +211,15 @@ function createSection({ id, title, collapsed, expandable, actions = [], onToggl
       btn.className = "sidebar-section-action-btn";
       btn.textContent = action.label;
       btn.title = action.title || "";
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        action.onClick();
-      });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); action.onClick(); });
       actionsEl.appendChild(btn);
     }
     header.appendChild(actionsEl);
   }
 
-  // Body
   const body = document.createElement("div");
   body.className = "sidebar-section-body";
 
-  // Toggle on header click
   header.addEventListener("click", () => {
     const isCollapsed = section.classList.toggle("collapsed");
     if (onToggle) onToggle(isCollapsed);
@@ -194,6 +230,8 @@ function createSection({ id, title, collapsed, expandable, actions = [], onToggl
 
   return { el: section, body };
 }
+
+// --- Recent files ---
 
 function renderRecentBody(container) {
   container.innerHTML = "";
@@ -216,23 +254,21 @@ function renderRecentBody(container) {
     name.className = "recent-file-name";
     name.textContent = filePath.split(/[\\/]/).pop();
 
+    const parts = filePath.split(/[\\/]/);
     const dir = document.createElement("span");
     dir.className = "recent-file-dir";
-    const parts = filePath.split(/[\\/]/);
     dir.textContent = parts.length > 1 ? parts[parts.length - 2] : "";
     dir.title = filePath;
 
     btn.appendChild(name);
     btn.appendChild(dir);
     btn.title = filePath;
-    btn.addEventListener("click", () => {
-      if (deps && deps.openFile) deps.openFile(filePath);
-    });
+    btn.addEventListener("click", () => { if (deps && deps.openFile) deps.openFile(filePath); });
     container.appendChild(btn);
   }
 }
 
-// --- Internal: TOC ---
+// --- TOC ---
 
 function renderTOC(markdownText) {
   const container = document.getElementById("toc-list");
@@ -298,11 +334,27 @@ function scrollToHeading(headingText, level) {
   }
 }
 
-// --- Internal: file tree ---
+// --- File tree ---
+
+async function loadTreeInto(treeRoot, folderPath) {
+  treeRoot.innerHTML = '<div class="sidebar-empty-msg">読み込み中...</div>';
+  if (!folderPath) { treeRoot.innerHTML = ""; return; }
+  try {
+    const tree = await buildMdTree(folderPath);
+    treeRoot.innerHTML = "";
+    if (tree.length === 0) {
+      treeRoot.innerHTML = '<div class="sidebar-empty-msg">.md ファイルなし</div>';
+      return;
+    }
+    treeRoot.appendChild(renderTreeNodes(tree));
+  } catch (err) {
+    console.error("renderFileTree failed:", err);
+    treeRoot.innerHTML = `<div class="sidebar-empty-msg">${String(err)}</div>`;
+  }
+}
 
 async function buildMdTree(dirPath) {
   const entries = await readDir(dirPath);
-  // Sort: folders first, then files, both alphabetically
   entries.sort((a, b) => {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
     return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
@@ -313,9 +365,7 @@ async function buildMdTree(dirPath) {
     const entryPath = await join(dirPath, entry.name);
     if (entry.isDirectory) {
       const children = await buildMdTree(entryPath);
-      if (children.length > 0) {
-        result.push({ name: entry.name, path: entryPath, children });
-      }
+      if (children.length > 0) result.push({ name: entry.name, path: entryPath, children });
     } else if (entry.isFile && /\.(md|markdown)$/i.test(entry.name)) {
       result.push({ name: entry.name, path: entryPath, children: null });
     }
@@ -327,7 +377,6 @@ function renderTreeNodes(nodes, depth = 0) {
   const container = document.createElement("div");
   for (const node of nodes) {
     if (node.children !== null) {
-      // Folder node
       const folder = document.createElement("div");
       folder.className = "file-tree-folder";
 
@@ -358,7 +407,6 @@ function renderTreeNodes(nodes, depth = 0) {
 
       container.appendChild(folder);
     } else {
-      // File node
       const btn = document.createElement("button");
       btn.className = "file-tree-item";
       btn.style.paddingLeft = `${8 + depth * 12}px`;
@@ -378,16 +426,59 @@ function renderTreeNodes(nodes, depth = 0) {
       if (deps && deps.getState && deps.getState().currentPath === node.path) {
         btn.classList.add("active");
       }
-      btn.addEventListener("click", () => {
-        if (deps && deps.openFile) deps.openFile(node.path);
-      });
+      btn.addEventListener("click", () => { if (deps && deps.openFile) deps.openFile(node.path); });
       container.appendChild(btn);
     }
   }
   return container;
 }
 
-// --- Internal: misc ---
+// --- Workspace folder list ---
+
+function loadWorkspaceFolders() {
+  try {
+    // Migrate legacy single-folder key
+    const legacy = localStorage.getItem("sokki-workspace-folder");
+    if (legacy) {
+      localStorage.removeItem("sokki-workspace-folder");
+      const folders = [legacy];
+      localStorage.setItem(WORKSPACE_FOLDERS_KEY, JSON.stringify(folders));
+      return folders;
+    }
+    const raw = localStorage.getItem(WORKSPACE_FOLDERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveWorkspaceFolders(folders) {
+  localStorage.setItem(WORKSPACE_FOLDERS_KEY, JSON.stringify(folders));
+}
+
+async function handleOpenWorkspace() {
+  try {
+    const folder = await dialogOpen({ directory: true, multiple: false });
+    if (!folder) return;
+    const folders = loadWorkspaceFolders();
+    if (!folders.includes(folder)) {
+      folders.push(folder);
+      saveWorkspaceFolders(folders);
+    }
+    renderFilesPanel();
+  } catch (err) {
+    console.error("Open workspace failed:", err);
+  }
+}
+
+function handleCloseFolder(folderPath) {
+  const folders = loadWorkspaceFolders().filter((p) => p !== folderPath);
+  saveWorkspaceFolders(folders);
+  localStorage.removeItem(`sokki-folder-collapsed-${folderPath}`);
+  renderFilesPanel();
+}
+
+// --- Misc ---
 
 function setSidebarVisible(visible) {
   const sidebar = document.getElementById("sidebar");
@@ -415,21 +506,4 @@ function loadRecentFiles() {
   } catch {
     return [];
   }
-}
-
-async function handleOpenWorkspace() {
-  try {
-    const folder = await dialogOpen({ directory: true, multiple: false });
-    if (!folder) return;
-    localStorage.setItem(WORKSPACE_KEY, folder);
-    // Re-render panel from scratch (new folder name in section header)
-    renderFilesPanel();
-  } catch (err) {
-    console.error("Open workspace failed:", err);
-  }
-}
-
-function handleCloseWorkspace() {
-  localStorage.removeItem(WORKSPACE_KEY);
-  renderFilesPanel();
 }

@@ -673,26 +673,65 @@ textarea {
 }
 #btn-open-workspace:hover { opacity: 1; background: var(--bg-sidebar-item-hover); }
 
-/* Sidebar sections (VSCode-style) */
-#sidebar-sections {
+/* Workspace area (scrollable, takes flex:1) */
+#sidebar-workspace-area {
     flex: 1;
     overflow-y: auto;
+    min-height: 60px;
+}
+
+/* Resize handle between workspace and recent */
+#sidebar-resize-handle {
+    height: 5px;
+    cursor: row-resize;
+    background: var(--border-sidebar);
+    flex-shrink: 0;
+    transition: background 0.15s;
+    position: relative;
+}
+#sidebar-resize-handle::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 2px;
+    border-top: 1px solid var(--fg-sidebar-tab);
+    border-bottom: 1px solid var(--fg-sidebar-tab);
+    opacity: 0.3;
+}
+#sidebar-resize-handle:hover,
+#sidebar-resize-handle.dragging {
+    background: #0e639c;
+}
+#sidebar-resize-handle.dragging::after { opacity: 0; }
+
+/* Recent Files area (fixed height, resizable via drag) */
+#sidebar-recent-area {
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-top: none; /* handle acts as separator */
+}
+#sidebar-recent-area .sidebar-section {
+    flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
+}
+#sidebar-recent-area .sidebar-section-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 /* Section: collapsible header + body */
 .sidebar-section {
     display: flex;
     flex-direction: column;
-    min-height: 0;
     flex-shrink: 0;
-}
-.sidebar-section.expandable {
-    /* Sections that can grow to fill available space */
-    flex: 1;
-    min-height: 0;
 }
 .sidebar-section-header {
     display: flex;
