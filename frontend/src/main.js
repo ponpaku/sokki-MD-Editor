@@ -738,18 +738,82 @@ function handleListIndent(e) {
   const fullLines = value.split("\n");
 
   // Get range of lines covered by selection
-  const firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
-  const firstLineIndex = value.substring(0, firstLineStart).split("\n").length - 1;
+  let firstLineStart = value.lastIndexOf("\n", start - 1) + 1;
+  let firstLineIndex = value.substring(0, firstLineStart).split("\n").length - 1;
   // When selection ends at a line boundary, exclude the next line
   const adjustedEnd = end > start && end > 0 && value[end - 1] === "\n" ? end - 1 : end;
-  const lastLineEnd = value.indexOf("\n", adjustedEnd);
-  const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+  let lastLineEnd = value.indexOf("\n", adjustedEnd);
+  let blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
+
+  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
+
+  // If cursor is on a <br> continuation line, expand upward to find the owning list marker
+  if (!listRegex.test(value.substring(firstLineStart, blockEnd).split("\n")[0])) {
+    const ctx = findListContext(value, start);
+    if (!ctx) return false;
+    // Walk upward to find the marker line
+    for (let i = firstLineIndex - 1; i >= 0; i--) {
+      if (listRegex.test(fullLines[i])) {
+        firstLineIndex = i;
+        firstLineStart = fullLines.slice(0, i).join("\n").length + (i > 0 ? 1 : 0);
+        break;
+      }
+      if (!fullLines[i].trimEnd().endsWith("<br>")) break;
+    }
+  }
+
+  // Calculate base indent (minimum indent of selected list items) before expanding downward
+  const initialBlock = value.substring(firstLineStart, blockEnd);
+  const baseIndent = initialBlock.split("\n").reduce((min, l) => {
+    const p = parseListLine(l);
+    return p && p.indentLen < min ? p.indentLen : min;
+  }, Infinity);
+  if (!isFinite(baseIndent)) return false; // no list lines in initial block
+
+  // Expand downward to include child list items (indent > baseIndent) and <br> continuation lines
+  let lastLineIndex = value.substring(0, blockEnd).split("\n").length - 1;
+  for (let i = lastLineIndex + 1; i < fullLines.length; i++) {
+    const fl = fullLines[i];
+    if (!fl.trim()) break; // blank line stops
+    const p = parseListLine(fl);
+    if (p) {
+      if (p.indentLen <= baseIndent) break; // sibling or parent level — stop
+      lastLineIndex = i; // child item — include
+    } else {
+      // non-list line: include only if previous included line ended with <br>
+      if (fullLines[i - 1].trimEnd().endsWith("<br>")) {
+        lastLineIndex = i;
+      } else {
+        break;
+      }
+    }
+  }
+  // Recalculate blockEnd based on expanded lastLineIndex
+  blockEnd = fullLines.slice(0, lastLineIndex + 1).join("\n").length;
+  if (blockEnd > value.length) blockEnd = value.length;
+
   const block = value.substring(firstLineStart, blockEnd);
   const lines = block.split("\n");
 
-  const listRegex = /^(\s*)([-*](?:\s\[[ xX]\])?|\d+\.)\s/;
   const hasListLine = lines.some((line) => listRegex.test(line));
   if (!hasListLine) return false;
+
+  // Check if a list item at lineIndex (in fullLines) can be indented:
+  // requires a sibling at the same indent level directly above (skipping continuation lines).
+  function canIndentLine(lineIndex, currentIndentLen) {
+    for (let i = lineIndex - 1; i >= 0; i--) {
+      const l = fullLines[i];
+      if (!l.trim()) break; // blank line stops search
+      const p = parseListLine(l);
+      if (p) {
+        if (p.indentLen === currentIndentLen) return true;  // sibling found
+        if (p.indentLen < currentIndentLen) return false;   // parent found — no sibling
+        // p.indentLen > currentIndentLen: child/deeper item — skip and keep searching upward
+      }
+      // continuation line — keep searching upward
+    }
+    return false;
+  }
 
   e.preventDefault();
 
@@ -791,16 +855,60 @@ function handleListIndent(e) {
   }
 
   if (e.shiftKey) {
-    // Outdent: remove up to 4 leading spaces from list lines
+    // Outdent: remove up to 4 leading spaces from list lines and their <br> continuations
+    let lastShift = 0;
     newLines = lines.map((line, i) => {
-      if (!listRegex.test(line)) return line;
-      const parsed = parseListLine(line);
-      if (!parsed) return line;
-      const removed = line.match(/^( {1,4})/);
-      if (removed) {
-        const count = removed[1].length;
-        if (i === 0) cursorDelta = -count;
-        const targetIndentLen = parsed.indentLen - count;
+      if (listRegex.test(line)) {
+        const parsed = parseListLine(line);
+        if (!parsed) return line;
+        const removed = line.match(/^( {1,4})/);
+        if (removed) {
+          const count = removed[1].length;
+          lastShift = -count;
+          if (i === 0) cursorDelta = lastShift;
+          const targetIndentLen = parsed.indentLen - count;
+          const template = findTemplateAtIndent(
+            fullLines,
+            firstLineIndex + i,
+            targetIndentLen,
+            firstLineIndex,
+            firstLineIndex + lines.length,
+          );
+          const marker = resolveMarkerForTarget(parsed, template, targetIndentLen, firstLineIndex + i);
+          return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
+        }
+        lastShift = 0;
+        return line;
+      }
+      // <br> continuation line: apply same shift as preceding list marker line
+      if (lastShift < 0) {
+        const stripped = line.substring(Math.min(-lastShift, line.search(/\S|$/)));
+        return stripped;
+      }
+      return line;
+    });
+  } else {
+    // Indent: add 4 spaces to list lines and their <br> continuations
+    // Only allowed if a sibling at the same indent level exists directly above.
+    let lastShift = 0;
+    newLines = lines.map((line, i) => {
+      if (listRegex.test(line)) {
+        const parsed = parseListLine(line);
+        if (!parsed) { lastShift = 0; return line; }
+        if (parsed.indentLen <= baseIndent) {
+          // Primary line: only indent if a sibling exists at the same level
+          if (!canIndentLine(firstLineIndex + i, parsed.indentLen)) {
+            lastShift = 0;
+            return line;
+          }
+          lastShift = 4;
+        } else {
+          // Child line: only follow if the parent was actually indented
+          if (lastShift === 0) return line;
+          lastShift = 4;
+        }
+        if (i === 0) cursorDelta = lastShift;
+        const targetIndentLen = parsed.indentLen + 4;
         const template = findTemplateAtIndent(
           fullLines,
           firstLineIndex + i,
@@ -811,25 +919,11 @@ function handleListIndent(e) {
         const marker = resolveMarkerForTarget(parsed, template, targetIndentLen, firstLineIndex + i);
         return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
       }
+      // <br> continuation line: apply same shift as preceding list marker line
+      if (lastShift > 0) {
+        return " ".repeat(lastShift) + line;
+      }
       return line;
-    });
-  } else {
-    // Indent: add 4 spaces to list lines
-    newLines = lines.map((line, i) => {
-      if (!listRegex.test(line)) return line;
-      const parsed = parseListLine(line);
-      if (!parsed) return line;
-      if (i === 0) cursorDelta = 4;
-      const targetIndentLen = parsed.indentLen + 4;
-      const template = findTemplateAtIndent(
-        fullLines,
-        firstLineIndex + i,
-        targetIndentLen,
-        firstLineIndex,
-        firstLineIndex + lines.length,
-      );
-      const marker = resolveMarkerForTarget(parsed, template, targetIndentLen, firstLineIndex + i);
-      return `${" ".repeat(targetIndentLen)}${marker} ${parsed.content}`;
     });
   }
 
@@ -840,7 +934,10 @@ function handleListIndent(e) {
 
   // Adjust cursor
   const newStart = Math.max(firstLineStart, start + cursorDelta);
-  const newEnd = Math.max(firstLineStart, end + (newBlock.length - block.length));
+  // If original had no selection (cursor only), keep it as cursor to avoid unexpected range selection
+  const newEnd = start === end
+    ? newStart
+    : Math.max(firstLineStart, end + (newBlock.length - block.length));
   editor.selectionStart = newStart;
   editor.selectionEnd = newEnd;
 
@@ -991,7 +1088,11 @@ function handleEnterKey(e) {
         editor.selectionStart = editor.selectionEnd = start + 1;
         commitProgrammaticEdit(beforeSnapshot);
       } else {
-        insertText("\n\n");
+        if (fullCurrentLine.trim().length === 0) {
+          insertText("\n");
+        } else {
+          insertText("\n\n");
+        }
       }
     }
   }
