@@ -1,6 +1,7 @@
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
-import { readDir } from "@tauri-apps/plugin-fs";
-import { join } from "@tauri-apps/api/path";
+import { readDir, rename, copyFile, remove, writeTextFile, exists } from "@tauri-apps/plugin-fs";
+import { join, dirname } from "@tauri-apps/api/path";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n.js";
 
 const RECENT_KEY = "sokki-recent-files";
@@ -16,6 +17,15 @@ const RECENT_HEIGHT_MIN = 60;
 let tocDebounceTimer = null;
 let deps = null;
 let recentResizeObserver = null;
+
+// --- Clipboard state for cut/paste ---
+let clipboard = null; // { op: 'cut'|'copy', srcPath, name } | null
+
+// --- Context menu DOM node (lazy-created) ---
+let ctxMenu = null;
+
+// --- Mouse-based drag state ---
+let dragState = null; // { srcPath, startX, startY, ghost, active, srcEl }
 
 // --- Public API ---
 
@@ -165,6 +175,8 @@ function buildFolderSection(folderPath, parentName = null) {
   const treeRoot = document.createElement("div");
   treeRoot.className = "file-tree-root";
   treeRoot.dataset.folder = folderPath;
+  treeRoot.dataset.workspaceRoot = folderPath;
+
   section.body.appendChild(treeRoot);
 
   return section;
@@ -298,7 +310,6 @@ function renderRecentBody(container) {
   }
 
   // Measure item height using a single probe element, then remove it.
-  // This avoids the flash caused by adding all items then trimming.
   const probe = buildRecentItem(recents[0]);
   container.appendChild(probe);
   const containerH = container.getBoundingClientRect().height;
@@ -309,7 +320,6 @@ function renderRecentBody(container) {
     ? Math.max(1, Math.floor(containerH / itemH))
     : recents.length;
 
-  // Build exact count in a DocumentFragment and append in one operation.
   const fragment = document.createDocumentFragment();
   const count = Math.min(recents.length, maxItems);
   for (let i = 0; i < count; i++) {
@@ -383,8 +393,6 @@ function scrollToHeading(headingText, level, occurrence = 0) {
 
   const preview = document.getElementById("preview-pane");
   if (preview) {
-    // Query all headings matching the level and text, then pick the occurrence-th one.
-    // This is more robust than predicting ID suffixes for duplicates.
     const tag = `h${level}`;
     const candidates = Array.from(preview.querySelectorAll(tag)).filter(
       (el) => el.textContent.trim() === headingText
@@ -397,16 +405,28 @@ function scrollToHeading(headingText, level, occurrence = 0) {
 // --- File tree ---
 
 async function loadTreeInto(treeRoot, folderPath) {
-  treeRoot.innerHTML = `<div class="sidebar-empty-msg">${t("sidebar.loading")}</div>`;
   if (!folderPath) { treeRoot.innerHTML = ""; return; }
+  // Show loading indicator only on first load (no real content yet)
+  const hasContent = treeRoot.querySelector(":scope > div:not(.sidebar-empty-msg)") !== null;
+  if (!hasContent) {
+    treeRoot.innerHTML = `<div class="sidebar-empty-msg">${t("sidebar.loading")}</div>`;
+  }
   try {
     const tree = await buildMdTree(folderPath);
-    treeRoot.innerHTML = "";
     if (tree.length === 0) {
       treeRoot.innerHTML = `<div class="sidebar-empty-msg">${t("sidebar.noMdFiles")}</div>`;
       return;
     }
-    treeRoot.appendChild(renderTreeNodes(tree));
+    const existing = treeRoot.querySelector(":scope > div:not(.sidebar-empty-msg)");
+    if (existing) {
+      // Diff update — no flash, preserves folder collapse state
+      diffContainer(existing, tree, 0);
+      // Remove any stale empty-state messages
+      treeRoot.querySelectorAll(":scope > .sidebar-empty-msg").forEach((el) => el.remove());
+    } else {
+      treeRoot.innerHTML = "";
+      treeRoot.appendChild(renderTreeNodes(tree));
+    }
   } catch (err) {
     console.error("renderFileTree failed:", err);
     treeRoot.innerHTML = `<div class="sidebar-empty-msg">${String(err)}</div>`;
@@ -433,64 +453,632 @@ async function buildMdTree(dirPath) {
   return result;
 }
 
+function createFileNode(node, depth) {
+  const btn = document.createElement("button");
+  btn.className = "file-tree-item";
+  btn.style.paddingLeft = `${8 + depth * 12}px`;
+  btn.title = node.path;
+  btn.dataset.path = node.path;
+
+  const fileIcon = document.createElement("span");
+  fileIcon.className = "file-tree-file-icon";
+  fileIcon.textContent = "○";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "file-tree-name";
+  nameSpan.textContent = node.name;
+
+  btn.appendChild(fileIcon);
+  btn.appendChild(nameSpan);
+
+  if (deps && deps.getState && deps.getState().currentPath === node.path) {
+    btn.classList.add("active");
+  }
+  btn.addEventListener("click", () => { if (deps && deps.openFile) deps.openFile(node.path); });
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showFileCtxMenu(e.clientX, e.clientY, node.path);
+  });
+  btn.addEventListener("mousedown", (e) => startFileDrag(e, node.path, btn));
+
+  return btn;
+}
+
+function createFolderEl(node, depth) {
+  const folder = document.createElement("div");
+  folder.className = "file-tree-folder";
+
+  const label = document.createElement("div");
+  label.className = "file-tree-folder-label";
+  label.style.paddingLeft = `${8 + depth * 12}px`;
+  label.dataset.folderPath = node.path;
+
+  const icon = document.createElement("span");
+  icon.className = "file-tree-folder-icon";
+  icon.textContent = "▾";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.textContent = node.name;
+
+  label.appendChild(icon);
+  label.appendChild(nameSpan);
+  folder.appendChild(label);
+
+  const childrenWrapper = document.createElement("div");
+  childrenWrapper.className = "file-tree-children";
+  const innerContainer = document.createElement("div");
+  childrenWrapper.appendChild(innerContainer);
+  folder.appendChild(childrenWrapper);
+
+  // Populate children
+  for (const child of node.children) {
+    if (child.children !== null) {
+      innerContainer.appendChild(createFolderEl(child, depth + 1));
+    } else {
+      innerContainer.appendChild(createFileNode(child, depth + 1));
+    }
+  }
+
+  label.addEventListener("click", () => {
+    const isCollapsed = folder.classList.toggle("collapsed");
+    childrenWrapper.classList.toggle("collapsed", isCollapsed);
+  });
+  label.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showFolderCtxMenu(e.clientX, e.clientY, node.path);
+  });
+
+  return folder;
+}
+
 function renderTreeNodes(nodes, depth = 0) {
   const container = document.createElement("div");
   for (const node of nodes) {
     if (node.children !== null) {
-      const folder = document.createElement("div");
-      folder.className = "file-tree-folder";
-
-      const label = document.createElement("div");
-      label.className = "file-tree-folder-label";
-      label.style.paddingLeft = `${8 + depth * 12}px`;
-
-      const icon = document.createElement("span");
-      icon.className = "file-tree-folder-icon";
-      icon.textContent = "▾";
-
-      const nameSpan = document.createElement("span");
-      nameSpan.textContent = node.name;
-
-      label.appendChild(icon);
-      label.appendChild(nameSpan);
-      folder.appendChild(label);
-
-      const children = document.createElement("div");
-      children.className = "file-tree-children";
-      children.appendChild(renderTreeNodes(node.children, depth + 1));
-      folder.appendChild(children);
-
-      label.addEventListener("click", () => {
-        const isCollapsed = folder.classList.toggle("collapsed");
-        children.classList.toggle("collapsed", isCollapsed);
-      });
-
-      container.appendChild(folder);
+      container.appendChild(createFolderEl(node, depth));
     } else {
-      const btn = document.createElement("button");
-      btn.className = "file-tree-item";
-      btn.style.paddingLeft = `${8 + depth * 12}px`;
-      btn.title = node.path;
-
-      const fileIcon = document.createElement("span");
-      fileIcon.className = "file-tree-file-icon";
-      fileIcon.textContent = "○";
-
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "file-tree-name";
-      nameSpan.textContent = node.name;
-
-      btn.appendChild(fileIcon);
-      btn.appendChild(nameSpan);
-
-      if (deps && deps.getState && deps.getState().currentPath === node.path) {
-        btn.classList.add("active");
-      }
-      btn.addEventListener("click", () => { if (deps && deps.openFile) deps.openFile(node.path); });
-      container.appendChild(btn);
+      container.appendChild(createFileNode(node, depth));
     }
   }
   return container;
+}
+
+// Diff existing container DOM against new node list.
+// Reuses existing elements where paths match, inserts new ones, removes stale ones.
+function diffContainer(container, newNodes, depth) {
+  // Index existing children by path
+  const existingByPath = new Map();
+  for (const child of container.children) {
+    if (child.classList.contains("file-tree-item") && child.dataset.path) {
+      existingByPath.set(normalizePath(child.dataset.path), child);
+    } else if (child.classList.contains("file-tree-folder")) {
+      const label = child.querySelector(":scope > .file-tree-folder-label");
+      if (label && label.dataset.folderPath) {
+        existingByPath.set(normalizePath(label.dataset.folderPath), child);
+      }
+    }
+  }
+
+  // Build desired child list, reusing or creating elements
+  const desired = [];
+  for (const node of newNodes) {
+    const key = normalizePath(node.path);
+    if (node.children !== null) {
+      // Folder
+      if (existingByPath.has(key)) {
+        const folderEl = existingByPath.get(key);
+        existingByPath.delete(key);
+        // Update display name if it changed
+        const label = folderEl.querySelector(":scope > .file-tree-folder-label");
+        const nameSpan = label && label.querySelector("span:not(.file-tree-folder-icon)");
+        if (nameSpan && nameSpan.textContent !== node.name) nameSpan.textContent = node.name;
+        // Recurse into children container
+        const innerContainer = folderEl.querySelector(":scope > .file-tree-children > div");
+        if (innerContainer) diffContainer(innerContainer, node.children, depth + 1);
+        desired.push(folderEl);
+      } else {
+        desired.push(createFolderEl(node, depth));
+      }
+    } else {
+      // File
+      if (existingByPath.has(key)) {
+        const btn = existingByPath.get(key);
+        existingByPath.delete(key);
+        // Update active state
+        if (deps && deps.getState) {
+          btn.classList.toggle("active", deps.getState().currentPath === node.path);
+        }
+        desired.push(btn);
+      } else {
+        desired.push(createFileNode(node, depth));
+      }
+    }
+  }
+
+  // Remove stale elements
+  for (const el of existingByPath.values()) el.remove();
+
+  // Apply desired order with minimal DOM moves
+  for (let i = 0; i < desired.length; i++) {
+    const el = desired[i];
+    if (container.children[i] !== el) container.insertBefore(el, container.children[i] ?? null);
+  }
+}
+
+// --- Context Menu Infrastructure ---
+
+function ensureCtxMenu() {
+  if (ctxMenu) return ctxMenu;
+  ctxMenu = document.createElement("div");
+  ctxMenu.id = "ctx-menu";
+  document.body.appendChild(ctxMenu);
+
+  document.addEventListener("mousedown", (e) => {
+    if (ctxMenu && !ctxMenu.contains(e.target)) {
+      hideCtxMenu();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideCtxMenu();
+  });
+
+  return ctxMenu;
+}
+
+function showCtxMenu(x, y, items) {
+  const menu = ensureCtxMenu();
+  menu.innerHTML = "";
+
+  for (const item of items) {
+    if (item.separator) {
+      const sep = document.createElement("div");
+      sep.className = "ctx-menu-separator";
+      menu.appendChild(sep);
+      continue;
+    }
+    const btn = document.createElement("button");
+    btn.className = "ctx-menu-item";
+    btn.textContent = item.label;
+    if (item.disabled) btn.disabled = true;
+    btn.addEventListener("click", () => {
+      hideCtxMenu();
+      item.onClick();
+    });
+    menu.appendChild(btn);
+  }
+
+  menu.classList.add("open");
+
+  // Position within viewport
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  menu.style.left = "0";
+  menu.style.top = "0";
+  requestAnimationFrame(() => {
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    const left = x + mw > vw ? Math.max(0, vw - mw) : x;
+    const top = y + mh > vh ? Math.max(0, vh - mh) : y;
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  });
+}
+
+function hideCtxMenu() {
+  if (ctxMenu) ctxMenu.classList.remove("open");
+}
+
+function showFileCtxMenu(x, y, filePath) {
+  const hasPaste = clipboard !== null;
+  showCtxMenu(x, y, [
+    { label: t("ctx.rename"), onClick: () => { const el = findFileItemByPath(filePath); if (el) triggerInlineRename(filePath, el); } },
+    { label: t("ctx.duplicate"), onClick: () => handleDuplicate(filePath) },
+    { separator: true },
+    { label: t("ctx.cut"), onClick: () => { clipboard = { op: "cut", srcPath: filePath, name: filePath.split(/[\\/]/).pop() }; } },
+    { label: t("ctx.paste"), disabled: !hasPaste, onClick: async () => { const dir = await dirname(filePath); await handlePaste(dir); } },
+    { separator: true },
+    { label: t("ctx.delete"), onClick: () => handleDeleteFile(filePath) },
+  ]);
+}
+
+function showFolderCtxMenu(x, y, folderPath) {
+  const hasPaste = clipboard !== null;
+  showCtxMenu(x, y, [
+    { label: t("ctx.newFile"), onClick: () => handleNewFileInFolder(folderPath) },
+    { separator: true },
+    { label: t("ctx.renameFolder"), onClick: () => { const el = findFolderLabelByPath(folderPath); if (el) triggerFolderInlineRename(folderPath, el); } },
+    { label: t("ctx.paste"), disabled: !hasPaste, onClick: () => handlePaste(folderPath) },
+    { separator: true },
+    { label: t("ctx.deleteFolder"), onClick: () => handleDeleteFolder(folderPath) },
+  ]);
+}
+
+// --- FS Helpers ---
+
+function normalizePath(p) {
+  return p.replace(/\\/g, "/");
+}
+
+function findWorkspaceRootForPath(anyPath) {
+  const normalized = normalizePath(anyPath);
+  const roots = document.querySelectorAll(".file-tree-root[data-workspace-root]");
+  for (const root of roots) {
+    const rootPath = normalizePath(root.dataset.workspaceRoot);
+    if (normalized.startsWith(rootPath)) return root;
+  }
+  return null;
+}
+
+async function refreshTreeForPath(anyPath) {
+  const root = findWorkspaceRootForPath(anyPath);
+  if (root) {
+    await loadTreeInto(root, root.dataset.folder);
+  }
+}
+
+async function generateCopyPath(dirPath, baseName) {
+  const dotIdx = baseName.lastIndexOf(".");
+  const stem = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+  const ext = dotIdx > 0 ? baseName.slice(dotIdx) : "";
+
+  let candidate = await join(dirPath, `${stem}_copy${ext}`);
+  if (!await exists(candidate)) return candidate;
+
+  let i = 2;
+  while (true) {
+    candidate = await join(dirPath, `${stem}_copy${i}${ext}`);
+    if (!await exists(candidate)) return candidate;
+    i++;
+  }
+}
+
+async function handleDeleteFile(filePath) {
+  const name = filePath.split(/[\\/]/).pop();
+  const confirmed = await ask(t("ctx.confirmDelete", name), {
+    title: t("ctx.delete"),
+    kind: "warning",
+    okLabel: t("ctx.delete"),
+    cancelLabel: t("new.cancel"),
+  });
+  if (!confirmed) return;
+  try {
+    await remove(filePath);
+    showStatus(t("status.deleted", name));
+    if (deps && deps.onFileDeleted && deps.getState && deps.getState().currentPath === filePath) {
+      deps.onFileDeleted();
+    }
+    await refreshTreeForPath(filePath);
+  } catch (err) {
+    console.error("Delete file failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+async function handleDuplicate(filePath) {
+  try {
+    const dir = await dirname(filePath);
+    const name = filePath.split(/[\\/]/).pop();
+    const destPath = await generateCopyPath(dir, name);
+    await copyFile(filePath, destPath);
+    const destName = destPath.split(/[\\/]/).pop();
+    showStatus(t("status.duplicated", destName));
+    await refreshTreeForPath(filePath);
+  } catch (err) {
+    console.error("Duplicate failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+async function handleDeleteFolder(folderPath) {
+  const name = folderPath.split(/[\\/]/).pop();
+  const confirmed = await ask(t("ctx.confirmDeleteFolder", name), {
+    title: t("ctx.deleteFolder"),
+    kind: "warning",
+    okLabel: t("ctx.deleteFolder"),
+    cancelLabel: t("new.cancel"),
+  });
+  if (!confirmed) return;
+  try {
+    await remove(folderPath, { recursive: true });
+    showStatus(t("status.deleted", name));
+    await refreshTreeForPath(folderPath);
+  } catch (err) {
+    console.error("Delete folder failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+async function handlePaste(destDir) {
+  if (!clipboard) return;
+  const { op, srcPath, name } = clipboard;
+  try {
+    const destPath = await join(destDir, name);
+    if (op === "cut") {
+      await rename(srcPath, destPath);
+      clipboard = null;
+      if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === srcPath) {
+        await deps.onFileRenamed(srcPath, destPath);
+      }
+      showStatus(t("status.moved", name));
+      // Refresh both source and dest trees
+      await refreshTreeForPath(srcPath);
+      await refreshTreeForPath(destPath);
+    } else {
+      await copyFile(srcPath, destPath);
+      showStatus(t("status.duplicated", name));
+      await refreshTreeForPath(destPath);
+    }
+  } catch (err) {
+    console.error("Paste failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+async function handleNewFileInFolder(folderPath) {
+  try {
+    const fileName = t("tree.newFileName");
+    let newPath = await join(folderPath, fileName);
+    // Avoid overwriting existing file
+    if (await exists(newPath)) {
+      newPath = await generateCopyPath(folderPath, fileName);
+    }
+    await writeTextFile(newPath, "");
+    await refreshTreeForPath(newPath);
+    // Trigger inline rename after tree refresh
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = findFileItemByPath(newPath);
+        if (el) triggerInlineRename(newPath, el);
+      });
+    });
+  } catch (err) {
+    console.error("New file failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+// --- Mouse-based Drag & Drop ---
+
+function startFileDrag(e, srcPath, srcEl) {
+  if (e.button !== 0) return;
+  dragState = { srcPath, startX: e.clientX, startY: e.clientY, ghost: null, active: false, srcEl };
+  document.addEventListener("mousemove", onDragMouseMove);
+  document.addEventListener("mouseup", onDragMouseUp);
+}
+
+function onDragMouseMove(e) {
+  if (!dragState) return;
+  if (!dragState.active) {
+    if (Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY) < 6) return;
+    dragState.active = true;
+    dragState.srcEl.classList.add("dragging");
+    const ghost = document.createElement("div");
+    ghost.className = "drag-ghost";
+    ghost.textContent = dragState.srcPath.split(/[\\/]/).pop();
+    document.body.appendChild(ghost);
+    dragState.ghost = ghost;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+  }
+  e.preventDefault();
+  if (dragState.ghost) {
+    dragState.ghost.style.left = `${e.clientX + 14}px`;
+    dragState.ghost.style.top = `${e.clientY - 8}px`;
+  }
+  // Update drag-over highlight
+  clearDragOver();
+  // Temporarily hide ghost to hit-test the element underneath
+  if (dragState.ghost) dragState.ghost.style.display = "none";
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (dragState.ghost) dragState.ghost.style.display = "";
+  if (el) {
+    const folderLabel = el.closest(".file-tree-folder-label");
+    const treeRoot = el.closest(".file-tree-root");
+    if (folderLabel) {
+      folderLabel.classList.add("drag-over");
+    } else if (treeRoot) {
+      treeRoot.classList.add("drag-over");
+    }
+  }
+}
+
+async function onDragMouseUp(e) {
+  document.removeEventListener("mousemove", onDragMouseMove);
+  document.removeEventListener("mouseup", onDragMouseUp);
+  if (!dragState) return;
+  const { srcPath, active, ghost, srcEl } = dragState;
+  dragState = null;
+  if (ghost) ghost.remove();
+  srcEl.classList.remove("dragging");
+  document.body.style.userSelect = "";
+  document.body.style.cursor = "";
+  clearDragOver();
+  if (!active) return;
+  // Find drop target via hit-test
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const folderLabel = el.closest(".file-tree-folder-label[data-folder-path]");
+  const fileItem = el.closest(".file-tree-item[data-path]");
+  const treeRoot = el.closest(".file-tree-root[data-folder]");
+  if (folderLabel) {
+    await handleDropMove(srcPath, folderLabel.dataset.folderPath);
+  } else if (fileItem && normalizePath(fileItem.dataset.path) !== normalizePath(srcPath)) {
+    const destDir = await dirname(fileItem.dataset.path);
+    await handleDropMove(srcPath, destDir);
+  } else if (treeRoot) {
+    await handleDropMove(srcPath, treeRoot.dataset.folder);
+  }
+}
+
+function clearDragOver() {
+  document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+}
+
+async function handleDropMove(srcPath, destDir) {
+  try {
+    const srcDir = normalizePath(await dirname(srcPath));
+    const destDirNorm = normalizePath(destDir);
+    if (srcDir === destDirNorm) return; // same folder, skip
+    const name = srcPath.split(/[\\/]/).pop();
+    const destPath = await join(destDir, name);
+    await rename(srcPath, destPath);
+    if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === srcPath) {
+      await deps.onFileRenamed(srcPath, destPath);
+    }
+    showStatus(t("status.moved", name));
+    await refreshTreeForPath(srcPath);
+    await refreshTreeForPath(destPath);
+  } catch (err) {
+    console.error("Drop move failed:", err);
+    showStatus(t("status.fsError", String(err)));
+  }
+}
+
+// --- DOM Finders ---
+
+function findFileItemByPath(filePath) {
+  const items = document.querySelectorAll(".file-tree-item[data-path]");
+  for (const item of items) {
+    if (normalizePath(item.dataset.path) === normalizePath(filePath)) return item;
+  }
+  return null;
+}
+
+function findFolderLabelByPath(folderPath) {
+  const labels = document.querySelectorAll(".file-tree-folder-label[data-folder-path]");
+  for (const label of labels) {
+    if (normalizePath(label.dataset.folderPath) === normalizePath(folderPath)) return label;
+  }
+  return null;
+}
+
+// --- Inline Rename ---
+
+function triggerInlineRename(filePath, btn) {
+  const nameSpan = btn.querySelector(".file-tree-name");
+  if (!nameSpan) return;
+
+  const oldName = filePath.split(/[\\/]/).pop();
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "file-tree-rename-input";
+  input.value = oldName;
+
+  // Select stem (before extension)
+  const dotIdx = oldName.lastIndexOf(".");
+  const stemEnd = dotIdx > 0 ? dotIdx : oldName.length;
+
+  // Prevent button click from firing while input is active
+  btn.style.pointerEvents = "none";
+  input.style.pointerEvents = "all";
+
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(0, stemEnd);
+
+  let committed = false;
+
+  async function commit() {
+    if (committed) return;
+    committed = true;
+    const newName = input.value.trim();
+    input.replaceWith(nameSpan);
+    btn.style.pointerEvents = "";
+    if (!newName || newName === oldName) return;
+    try {
+      const dir = await dirname(filePath);
+      const newPath = await join(dir, newName);
+      await rename(filePath, newPath);
+      if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === filePath) {
+        await deps.onFileRenamed(filePath, newPath);
+      }
+      showStatus(t("status.renamed", newName));
+      await refreshTreeForPath(newPath);
+    } catch (err) {
+      console.error("Rename failed:", err);
+      showStatus(t("status.fsError", String(err)));
+      await refreshTreeForPath(filePath);
+    }
+  }
+
+  function revert() {
+    if (committed) return;
+    committed = true;
+    input.replaceWith(nameSpan);
+    btn.style.pointerEvents = "";
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); revert(); }
+    e.stopPropagation();
+  });
+  input.addEventListener("blur", () => commit());
+}
+
+function triggerFolderInlineRename(folderPath, label) {
+  const nameSpan = label.querySelector("span:not(.file-tree-folder-icon)");
+  if (!nameSpan) return;
+
+  const oldName = folderPath.split(/[\\/]/).pop();
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "file-tree-rename-input";
+  input.value = oldName;
+
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(0, oldName.length);
+
+  let committed = false;
+
+  async function commit() {
+    if (committed) return;
+    committed = true;
+    const newName = input.value.trim();
+    input.replaceWith(nameSpan);
+    if (!newName || newName === oldName) return;
+    try {
+      const dir = await dirname(folderPath);
+      const newPath = await join(dir, newName);
+      await rename(folderPath, newPath);
+      // Migrate localStorage collapse key
+      const oldKey = `sokki-folder-collapsed-${folderPath}`;
+      const newKey = `sokki-folder-collapsed-${newPath}`;
+      const val = localStorage.getItem(oldKey);
+      if (val !== null) {
+        localStorage.setItem(newKey, val);
+        localStorage.removeItem(oldKey);
+      }
+      showStatus(t("status.renamed", newName));
+      await refreshTreeForPath(newPath);
+    } catch (err) {
+      console.error("Folder rename failed:", err);
+      showStatus(t("status.fsError", String(err)));
+      await refreshTreeForPath(folderPath);
+    }
+  }
+
+  function revert() {
+    if (committed) return;
+    committed = true;
+    input.replaceWith(nameSpan);
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); revert(); }
+    e.stopPropagation();
+  });
+  input.addEventListener("blur", () => commit());
+}
+
+// --- Status helper ---
+
+function showStatus(msg) {
+  if (deps && deps.setStatus) deps.setStatus(msg);
 }
 
 // --- Workspace folder list ---

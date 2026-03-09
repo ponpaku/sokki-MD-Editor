@@ -1478,6 +1478,23 @@ async function init() {
       if (!await confirmDiscard()) return;
       await openFileFromPath(filePath);
     },
+    setStatus: (msg) => setStatus(msg),
+    onFileDeleted: () => {
+      stopWatching();
+      editor.value = "";
+      state.currentPath = null;
+      setCleanValue("");
+      updatePreview();
+      updateTitle();
+      setStatus(t("status.ready"));
+    },
+    onFileRenamed: async (oldPath, newPath) => {
+      if (state.currentPath !== oldPath) return;
+      await stopWatching();
+      state.currentPath = newPath;
+      updateTitle();
+      await startWatching(newPath);
+    },
   });
 
   const savedTheme = localStorage.getItem("sokki-theme") || "light";

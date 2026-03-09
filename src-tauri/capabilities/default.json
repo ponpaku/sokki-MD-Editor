@@ -18,6 +18,9 @@
     "fs:allow-mkdir",
     "fs:allow-read-dir",
     "fs:allow-watch",
+    "fs:allow-rename",
+    "fs:allow-copy-file",
+    "fs:allow-remove",
     {
       "identifier": "fs:scope",
       "allow": [
