@@ -1,7 +1,7 @@
-import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { open as dialogOpen, ask } from "@tauri-apps/plugin-dialog";
 import { readDir, rename, copyFile, remove, writeTextFile, exists } from "@tauri-apps/plugin-fs";
 import { join, dirname } from "@tauri-apps/api/path";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { t } from "./i18n.js";
 
 const RECENT_KEY = "sokki-recent-files";
@@ -152,8 +152,8 @@ function renderFilesPanel() {
   recentArea.appendChild(recentSection.el);
   panel.appendChild(recentArea);
 
-  // Render all items once. No ResizeObserver needed — all items are always in the DOM;
-  // CSS overflow:hidden clips what doesn't fit, and reveals more as the section grows.
+  // Render all items once on the next frame so the area is in the DOM first.
+  // renderRecentBody will schedule a clamp after layout completes.
   requestAnimationFrame(() => renderRecentBody(recentSection.body));
 }
 
@@ -183,6 +183,43 @@ function buildFolderSection(folderPath, parentName = null) {
 
 // --- Resize handle ---
 
+/**
+ * Compute the maximum sensible height for #sidebar-recent-area by summing
+ * the actual rendered heights of all items inside the section body.
+ * Falls back to RECENT_HEIGHT_MIN when items are not yet in the DOM.
+ */
+function getRecentMaxHeight(recentArea) {
+  const header = recentArea.querySelector(".sidebar-section-header");
+  const headerH = header ? header.getBoundingClientRect().height : 28;
+  const body = recentArea.querySelector(".sidebar-section-body");
+  if (!body) return RECENT_HEIGHT_MIN;
+  let itemsH = 0;
+  for (const child of body.children) {
+    itemsH += child.getBoundingClientRect().height;
+  }
+  if (itemsH === 0) {
+    // Items not in DOM yet — fall back to count-based estimate
+    const count = loadRecentFiles().length;
+    itemsH = count * RECENT_ITEM_HEIGHT_PX;
+  }
+  return Math.max(RECENT_HEIGHT_MIN, Math.ceil(itemsH + headerH));
+}
+
+/**
+ * Clamp #sidebar-recent-area height to the actual content size.
+ * Called after any render so empty space below the last item is removed.
+ */
+function clampRecentAreaToContent() {
+  const recentArea = document.getElementById("sidebar-recent-area");
+  if (!recentArea) return;
+  const maxH = getRecentMaxHeight(recentArea);
+  const currentH = recentArea.getBoundingClientRect().height;
+  if (currentH > maxH) {
+    recentArea.style.height = `${maxH}px`;
+    localStorage.setItem(RECENT_HEIGHT_KEY, String(maxH));
+  }
+}
+
 function initResizeHandle(handle) {
   handle.addEventListener("mousedown", (e) => {
     e.preventDefault();
@@ -193,24 +230,13 @@ function initResizeHandle(handle) {
 
     const startY = e.clientY;
     const startHeight = recentArea.getBoundingClientRect().height;
-
-    // Measure real item height and header height before drag starts
-    const sectionHeader = recentArea.querySelector(".sidebar-section-header");
-    const headerH = sectionHeader ? sectionHeader.getBoundingClientRect().height : 28;
-    const firstItem = recentArea.querySelector(".recent-file-item");
-    const itemH = firstItem ? firstItem.getBoundingClientRect().height : RECENT_ITEM_HEIGHT_PX;
-
-    const recentCount = loadRecentFiles().length;
-    const maxHeight = recentCount > 0
-      ? Math.max(RECENT_HEIGHT_MIN, recentCount * itemH + headerH)
-      : RECENT_HEIGHT_MIN;
+    // Use DOM-measured max so no empty space can appear below the last item
+    const maxHeight = getRecentMaxHeight(recentArea);
 
     const onMouseMove = (e) => {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
-      // No re-render needed: all items are always in the DOM,
-      // CSS overflow:hidden reveals more as the section grows.
     };
 
     const onMouseUp = () => {
@@ -318,19 +344,53 @@ function renderRecentBody(container) {
     msg.className = "sidebar-empty-msg";
     msg.textContent = t("sidebar.noRecent");
     container.appendChild(msg);
-    return;
+  } else {
+    // Always render all items. CSS overflow:hidden clips what doesn't fit.
+    const fragment = document.createDocumentFragment();
+    for (const filePath of recents) {
+      fragment.appendChild(buildRecentItem(filePath));
+    }
+    container.appendChild(fragment);
   }
 
-  // Always render all items. The section-body has overflow:hidden so items
-  // beyond the visible area are clipped by CSS — no JS counting needed.
-  const fragment = document.createDocumentFragment();
-  for (const filePath of recents) {
-    fragment.appendChild(buildRecentItem(filePath));
-  }
-  container.appendChild(fragment);
+  // After layout, clamp the area height so no empty space appears below items
+  requestAnimationFrame(clampRecentAreaToContent);
 }
 
 // --- TOC ---
+
+/**
+ * Remove fenced code blocks (``` or ~~~) so heading detection
+ * doesn't pick up # lines inside code fences.
+ */
+function stripFencedCodeBlocks(text) {
+  const lines = text.split("\n");
+  const out = [];
+  let fenceLen = 0;
+  let fenceChar = "";
+  for (const line of lines) {
+    if (fenceLen === 0) {
+      // Opening fence: ``` or ~~~ optionally followed by info string (no same chars)
+      const m = line.match(/^(`{3,}|~{3,})[^`~]*$/);
+      if (m) {
+        fenceChar = m[1][0];
+        fenceLen = m[1].length;
+        out.push("");
+      } else {
+        out.push(line);
+      }
+    } else {
+      // Closing fence: same char, same or greater length, only trailing whitespace
+      const m = line.match(/^(`{3,}|~{3,})\s*$/);
+      if (m && m[1][0] === fenceChar && m[1].length >= fenceLen) {
+        fenceLen = 0;
+        fenceChar = "";
+      }
+      out.push("");
+    }
+  }
+  return out.join("\n");
+}
 
 function renderTOC(markdownText) {
   const container = document.getElementById("toc-list");
@@ -338,9 +398,10 @@ function renderTOC(markdownText) {
   container.innerHTML = "";
 
   const headingRegex = /^(#{1,6})\s+(.+)$/gm;
+  const source = stripFencedCodeBlocks(markdownText);
   const headings = [];
   let match;
-  while ((match = headingRegex.exec(markdownText)) !== null) {
+  while ((match = headingRegex.exec(source)) !== null) {
     headings.push({ level: match[1].length, text: match[2].trim() });
   }
 
@@ -831,6 +892,12 @@ async function handleDeleteFolder(folderPath) {
     await remove(folderPath, { recursive: true });
     removeFromRecentFileOrFolder(folderPath);
     showStatus(t("status.deleted", name));
+    // If the currently open file was inside the deleted folder, reset the editor
+    const normFolder = normalizePath(folderPath);
+    const currentPath = deps?.getState?.()?.currentPath;
+    if (currentPath && normalizePath(currentPath).startsWith(normFolder + "/") && deps?.onFileDeleted) {
+      deps.onFileDeleted();
+    }
     await refreshTreeForPath(folderPath);
   } catch (err) {
     console.error("Delete folder failed:", err);
@@ -1258,6 +1325,12 @@ function initAboutModal() {
   const btnCopy = document.getElementById("about-copy-url");
   const urlEl = document.getElementById("about-repo-url");
   if (!btnAbout || !modal) return;
+
+  // Populate version from Tauri (single source of truth: Cargo.toml)
+  const versionCell = document.getElementById("about-version");
+  if (versionCell) {
+    getVersion().then((v) => { versionCell.textContent = v; }).catch(() => {});
+  }
 
   function openModal() { modal.classList.add("open"); }
   function closeModal() { modal.classList.remove("open"); }

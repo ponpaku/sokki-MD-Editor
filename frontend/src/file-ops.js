@@ -19,12 +19,25 @@ export async function actionOpen() {
   return { path: selected, text };
 }
 
+function stripInlineMarkdown(text) {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")        // images → remove entirely
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")      // links → keep label
+    .replace(/`([^`]*)`/g, "$1")                  // inline code → keep content
+    .replace(/\*\*([^*]*)\*\*/g, "$1")            // bold **
+    .replace(/__([^_]*)__/g, "$1")                // bold __
+    .replace(/\*([^*]*)\*/g, "$1")                // italic *
+    .replace(/_([^_]*)_/g, "$1")                  // italic _
+    .replace(/~~([^~]*)~~/g, "$1")                // strikethrough
+    .trim();
+}
+
 function suggestFilename(text) {
   // First heading takes priority
   const headingMatch = text.match(/^#{1,6}\s+(.+)$/m);
   const raw = headingMatch
-    ? headingMatch[1].trim()
-    : (text.split("\n").find((l) => l.trim()) || "").trim();
+    ? stripInlineMarkdown(headingMatch[1])
+    : stripInlineMarkdown(text.split("\n").find((l) => l.trim()) || "");
   if (!raw) return null;
   // Strip characters that are invalid in Windows/macOS filenames
   return raw.replace(/[\\/:*?"<>|]/g, "").trim().slice(0, 80) || null;
