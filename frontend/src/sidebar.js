@@ -13,6 +13,9 @@ const RECENT_HEIGHT_KEY = "sokki-recent-height";
 const RECENT_MAX = 20;
 const RECENT_HEIGHT_DEFAULT = 200;
 const RECENT_HEIGHT_MIN = 60;
+// CSS: .recent-file-item { font-size: 0.78rem; padding: 3px 8px }
+// 0.78rem × 1.4 line-height ≈ 17px + 6px padding = 23px → round to 24
+const RECENT_ITEM_HEIGHT_PX = 24;
 
 let tocDebounceTimer = null;
 let deps = null;
@@ -199,14 +202,12 @@ function initResizeHandle(handle) {
     const startY = e.clientY;
     const startHeight = recentArea.getBoundingClientRect().height;
 
-    // Compute max height = height needed to show all recent items
+    // Max height = all items × fixed item height + section header height
     const recentCount = loadRecentFiles().length;
-    const firstItem = recentArea.querySelector(".recent-file-item");
-    const itemH = firstItem ? firstItem.getBoundingClientRect().height : 28;
     const sectionHeader = recentArea.querySelector(".sidebar-section-header");
     const headerH = sectionHeader ? sectionHeader.getBoundingClientRect().height : 28;
     const maxHeight = recentCount > 0
-      ? Math.max(RECENT_HEIGHT_MIN, recentCount * itemH + headerH + 4)
+      ? Math.max(RECENT_HEIGHT_MIN, recentCount * RECENT_ITEM_HEIGHT_PX + headerH)
       : RECENT_HEIGHT_MIN;
 
     const recentBody = document.getElementById("recent-section-body");
@@ -215,8 +216,8 @@ function initResizeHandle(handle) {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
-      // Re-render immediately during drag so items fill the space without delay
-      if (recentBody) renderRecentBody(recentBody);
+      // Pass body height directly so renderRecentBody doesn't rely on stale getBoundingClientRect
+      if (recentBody) renderRecentBody(recentBody, newHeight - headerH);
     };
 
     const onMouseUp = () => {
@@ -315,7 +316,7 @@ function buildRecentItem(filePath) {
   return btn;
 }
 
-function renderRecentBody(container) {
+function renderRecentBody(container, explicitBodyHeight = null) {
   container.innerHTML = "";
   const recents = loadRecentFiles();
 
@@ -327,15 +328,11 @@ function renderRecentBody(container) {
     return;
   }
 
-  // Measure item height using a single probe element, then remove it.
-  const probe = buildRecentItem(recents[0]);
-  container.appendChild(probe);
-  const containerH = container.getBoundingClientRect().height;
-  const itemH = probe.getBoundingClientRect().height;
-  container.innerHTML = "";
-
-  const maxItems = containerH > 0 && itemH > 0
-    ? Math.max(1, Math.floor(containerH / itemH))
+  // Use the explicit height passed from the drag handler (avoids reflow timing issues),
+  // falling back to getBoundingClientRect when not dragging.
+  const containerH = explicitBodyHeight ?? container.getBoundingClientRect().height;
+  const maxItems = containerH > 0
+    ? Math.max(1, Math.floor(containerH / RECENT_ITEM_HEIGHT_PX))
     : recents.length;
 
   const fragment = document.createDocumentFragment();
