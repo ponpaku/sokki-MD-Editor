@@ -202,7 +202,7 @@ function initResizeHandle(handle) {
     const startY = e.clientY;
     const startHeight = recentArea.getBoundingClientRect().height;
 
-    // Measure actual item height from a rendered item (avoids hardcoded constant mismatch)
+    // Measure real item height and header height before drag starts
     const sectionHeader = recentArea.querySelector(".sidebar-section-header");
     const headerH = sectionHeader ? sectionHeader.getBoundingClientRect().height : 28;
     const firstItem = recentArea.querySelector(".recent-file-item");
@@ -215,25 +215,34 @@ function initResizeHandle(handle) {
 
     const recentBody = document.getElementById("recent-section-body");
 
+    // Pause ResizeObserver during drag — it fires async and would override our renders
+    if (recentResizeObserver) recentResizeObserver.disconnect();
+
     const onMouseMove = (e) => {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
-      // Calculate item count directly from measured height — no DOM reflow needed
+      // Pass count directly — avoids any DOM measurement during drag
       if (recentBody) {
-        const count = Math.max(1, Math.floor((newHeight - headerH) / itemH));
-        renderRecentBody(recentBody, count * itemH);
+        const count = Math.floor((newHeight - headerH) / itemH);
+        renderRecentBody(recentBody, count);
       }
     };
 
     const onMouseUp = () => {
       handle.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
       const recentArea = document.getElementById("sidebar-recent-area");
       if (recentArea) {
         localStorage.setItem(RECENT_HEIGHT_KEY, String(Math.round(recentArea.getBoundingClientRect().height)));
       }
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      // Resume ResizeObserver and do a final render
+      const body = document.getElementById("recent-section-body");
+      if (body) {
+        renderRecentBody(body);
+        if (recentResizeObserver) recentResizeObserver.observe(body);
+      }
     };
 
     document.addEventListener("mousemove", onMouseMove);
@@ -322,7 +331,7 @@ function buildRecentItem(filePath) {
   return btn;
 }
 
-function renderRecentBody(container, explicitBodyHeight = null) {
+function renderRecentBody(container, maxCount = null) {
   container.innerHTML = "";
   const recents = loadRecentFiles();
 
@@ -334,15 +343,23 @@ function renderRecentBody(container, explicitBodyHeight = null) {
     return;
   }
 
-  // Use the explicit height passed from the drag handler (avoids reflow timing issues),
-  // falling back to getBoundingClientRect when not dragging.
-  const containerH = explicitBodyHeight ?? container.getBoundingClientRect().height;
-  const maxItems = containerH > 0
-    ? Math.max(1, Math.floor(containerH / RECENT_ITEM_HEIGHT_PX))
-    : recents.length;
+  let count;
+  if (maxCount !== null) {
+    // Drag path: count provided directly — no DOM measurement needed
+    count = Math.min(recents.length, Math.max(1, maxCount));
+  } else {
+    // Normal path: probe one item to get the real item height, then measure container
+    const probe = buildRecentItem(recents[0]);
+    container.appendChild(probe);
+    const containerH = container.getBoundingClientRect().height;
+    const itemH = probe.getBoundingClientRect().height || RECENT_ITEM_HEIGHT_PX;
+    container.innerHTML = "";
+    count = containerH > 0 && itemH > 0
+      ? Math.min(recents.length, Math.max(1, Math.floor(containerH / itemH)))
+      : recents.length;
+  }
 
   const fragment = document.createDocumentFragment();
-  const count = Math.min(recents.length, maxItems);
   for (let i = 0; i < count; i++) {
     fragment.appendChild(buildRecentItem(recents[i]));
   }
