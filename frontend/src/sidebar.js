@@ -443,7 +443,9 @@ function scrollToHeading(headingText, level, occurrence = 0) {
         if (matchCount === occurrence) {
           editor.focus();
           editor.setSelectionRange(charPos, charPos + line.length);
-          const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 24;
+          const computedLineHeight = getComputedStyle(editor).lineHeight;
+          const lineHeight = parseFloat(computedLineHeight) ||
+            parseFloat(getComputedStyle(editor).fontSize) * 1.6;
           const lineIndex = value.substring(0, charPos).split("\n").length - 1;
           editor.scrollTop = lineIndex * lineHeight - editor.clientHeight / 3;
           break;
@@ -777,7 +779,7 @@ function findWorkspaceRootForPath(anyPath) {
   const roots = document.querySelectorAll(".file-tree-root[data-workspace-root]");
   for (const root of roots) {
     const rootPath = normalizePath(root.dataset.workspaceRoot);
-    if (normalized.startsWith(rootPath)) return root;
+    if (normalized === rootPath || normalized.startsWith(rootPath + "/")) return root;
   }
   return null;
 }

@@ -6,7 +6,6 @@ const dictionaries = {
     "btn.save": "Save",
     "btn.saveAs": "Save As",
     "btn.themeToggle": "Toggle theme",
-    "btn.sidebarToggle": "Sidebar",
     "sidebar.toggleTitle": "Toggle Sidebar",
     // editor
     "editor.placeholder": "Type here...",
@@ -177,7 +176,6 @@ const dictionaries = {
     "btn.save": "保存",
     "btn.saveAs": "名前を付けて保存",
     "btn.themeToggle": "テーマ切替",
-    "btn.sidebarToggle": "サイドバー",
     "sidebar.toggleTitle": "サイドバーを切替",
     // editor
     "editor.placeholder": "ここに入力...",

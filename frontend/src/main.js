@@ -1494,6 +1494,7 @@ async function init() {
       stopWatching();
       editor.value = "";
       state.currentPath = null;
+      resetEditorHistory();
       setCleanValue("");
       updatePreview();
       updateTitle();
