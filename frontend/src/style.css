@@ -636,9 +636,11 @@ textarea {
     border-right: 1px solid var(--border-sidebar);
     overflow: hidden;
     height: 100%;
+    transition: width 0.2s ease, border-right-width 0.2s ease;
 }
 #sidebar.hidden {
-    display: none;
+    width: 0;
+    border-right-width: 0;
 }
 
 #sidebar-tab-bar {
