@@ -209,10 +209,14 @@ function initResizeHandle(handle) {
       ? Math.max(RECENT_HEIGHT_MIN, recentCount * itemH + headerH + 4)
       : RECENT_HEIGHT_MIN;
 
+    const recentBody = document.getElementById("recent-section-body");
+
     const onMouseMove = (e) => {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
+      // Re-render immediately during drag so items fill the space without delay
+      if (recentBody) renderRecentBody(recentBody);
     };
 
     const onMouseUp = () => {
