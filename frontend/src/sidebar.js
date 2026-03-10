@@ -19,7 +19,6 @@ const RECENT_ITEM_HEIGHT_PX = 24;
 
 let tocDebounceTimer = null;
 let deps = null;
-let recentResizeObserver = null;
 
 // --- Clipboard state for cut/paste ---
 let clipboard = null; // { op: 'cut'|'copy', srcPath, name } | null
@@ -153,16 +152,9 @@ function renderFilesPanel() {
   recentArea.appendChild(recentSection.el);
   panel.appendChild(recentArea);
 
-  // Initial render after layout, then observe for size changes
-  requestAnimationFrame(() => {
-    renderRecentBody(recentSection.body);
-    if (recentResizeObserver) recentResizeObserver.disconnect();
-    recentResizeObserver = new ResizeObserver(() => {
-      const body = document.getElementById("recent-section-body");
-      if (body) renderRecentBody(body);
-    });
-    recentResizeObserver.observe(recentSection.body);
-  });
+  // Render all items once. No ResizeObserver needed — all items are always in the DOM;
+  // CSS overflow:hidden clips what doesn't fit, and reveals more as the section grows.
+  requestAnimationFrame(() => renderRecentBody(recentSection.body));
 }
 
 function buildFolderSection(folderPath, parentName = null) {
@@ -213,18 +205,12 @@ function initResizeHandle(handle) {
       ? Math.max(RECENT_HEIGHT_MIN, recentCount * itemH + headerH)
       : RECENT_HEIGHT_MIN;
 
-    const recentBody = document.getElementById("recent-section-body");
-
-    // Pause ResizeObserver during drag — it fires async and would override our renders
-    if (recentResizeObserver) recentResizeObserver.disconnect();
-
     const onMouseMove = (e) => {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
-      // Render all items; overflow:hidden clips what doesn't fit.
-      // No count calculation needed — maxHeight already prevents excess space.
-      if (recentBody) renderRecentBody(recentBody, recentCount);
+      // No re-render needed: all items are always in the DOM,
+      // CSS overflow:hidden reveals more as the section grows.
     };
 
     const onMouseUp = () => {
@@ -234,12 +220,6 @@ function initResizeHandle(handle) {
       const recentArea = document.getElementById("sidebar-recent-area");
       if (recentArea) {
         localStorage.setItem(RECENT_HEIGHT_KEY, String(Math.round(recentArea.getBoundingClientRect().height)));
-      }
-      // Resume ResizeObserver and do a final render
-      const body = document.getElementById("recent-section-body");
-      if (body) {
-        renderRecentBody(body);
-        if (recentResizeObserver) recentResizeObserver.observe(body);
       }
     };
 
@@ -329,7 +309,7 @@ function buildRecentItem(filePath) {
   return btn;
 }
 
-function renderRecentBody(container, maxCount = null) {
+function renderRecentBody(container) {
   container.innerHTML = "";
   const recents = loadRecentFiles();
 
@@ -341,25 +321,11 @@ function renderRecentBody(container, maxCount = null) {
     return;
   }
 
-  let count;
-  if (maxCount !== null) {
-    // Drag path: count provided directly — no DOM measurement needed
-    count = Math.min(recents.length, Math.max(1, maxCount));
-  } else {
-    // Normal path: probe one item to get the real item height, then measure container
-    const probe = buildRecentItem(recents[0]);
-    container.appendChild(probe);
-    const containerH = container.getBoundingClientRect().height;
-    const itemH = probe.getBoundingClientRect().height || RECENT_ITEM_HEIGHT_PX;
-    container.innerHTML = "";
-    count = containerH > 0 && itemH > 0
-      ? Math.min(recents.length, Math.max(1, Math.floor(containerH / itemH)))
-      : recents.length;
-  }
-
+  // Always render all items. The section-body has overflow:hidden so items
+  // beyond the visible area are clipped by CSS — no JS counting needed.
   const fragment = document.createDocumentFragment();
-  for (let i = 0; i < count; i++) {
-    fragment.appendChild(buildRecentItem(recents[i]));
+  for (const filePath of recents) {
+    fragment.appendChild(buildRecentItem(filePath));
   }
   container.appendChild(fragment);
 }
