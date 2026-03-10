@@ -68,6 +68,9 @@ const dictionaries = {
     "ctx.renameFolder": "Rename Folder",
     "ctx.confirmDelete": "Delete \"{0}\"? This cannot be undone.",
     "ctx.confirmDeleteFolder": "Delete folder \"{0}\" and all its contents? This cannot be undone.",
+    "ctx.confirmOverwrite": "\"{0}\" already exists. Overwrite?",
+    "ctx.overwrite": "Overwrite",
+    "ctx.circularMove": "Cannot move a folder into itself.",
     "tree.newFileName": "new-file.md",
     // export modal
     "exportModal.titlePdf": "Export PDF",
@@ -225,6 +228,9 @@ const dictionaries = {
     "ctx.renameFolder": "フォルダ名を変更",
     "ctx.confirmDelete": "「{0}」を削除しますか？この操作は元に戻せません。",
     "ctx.confirmDeleteFolder": "フォルダ「{0}」とその中のファイルをすべて削除しますか？この操作は元に戻せません。",
+    "ctx.confirmOverwrite": "「{0}」はすでに存在します。上書きしますか？",
+    "ctx.overwrite": "上書き",
+    "ctx.circularMove": "フォルダを自分自身の中に移動できません。",
     "tree.newFileName": "新しいファイル.md",
     // export modal
     "exportModal.titlePdf": "PDF 書き出し",

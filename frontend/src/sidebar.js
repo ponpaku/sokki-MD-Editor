@@ -25,7 +25,9 @@ let clipboard = null; // { op: 'cut'|'copy', srcPath, name } | null
 let ctxMenu = null;
 
 // --- Mouse-based drag state ---
-let dragState = null; // { srcPath, startX, startY, ghost, active, srcEl }
+let dragState = null; // { srcPath, startX, startY, ghost, active, srcEl, isFolder }
+// Suppress the click event that fires after a completed drag on the same element
+let suppressNextClick = false;
 
 // --- Public API ---
 
@@ -474,13 +476,16 @@ function createFileNode(node, depth) {
   if (deps && deps.getState && deps.getState().currentPath === node.path) {
     btn.classList.add("active");
   }
-  btn.addEventListener("click", () => { if (deps && deps.openFile) deps.openFile(node.path); });
+  btn.addEventListener("click", () => {
+    if (suppressNextClick) { suppressNextClick = false; return; }
+    if (deps && deps.openFile) deps.openFile(node.path);
+  });
   btn.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
     showFileCtxMenu(e.clientX, e.clientY, node.path);
   });
-  btn.addEventListener("mousedown", (e) => startFileDrag(e, node.path, btn));
+  btn.addEventListener("mousedown", (e) => startDrag(e, node.path, btn, false));
 
   return btn;
 }
@@ -521,6 +526,7 @@ function createFolderEl(node, depth) {
   }
 
   label.addEventListener("click", () => {
+    if (suppressNextClick) { suppressNextClick = false; return; }
     const isCollapsed = folder.classList.toggle("collapsed");
     childrenWrapper.classList.toggle("collapsed", isCollapsed);
   });
@@ -528,6 +534,10 @@ function createFolderEl(node, depth) {
     e.preventDefault();
     e.stopPropagation();
     showFolderCtxMenu(e.clientX, e.clientY, node.path);
+  });
+  label.addEventListener("mousedown", (e) => {
+    if (e.target.tagName === "INPUT") return;
+    startDrag(e, node.path, label, true);
   });
 
   return folder;
@@ -718,6 +728,37 @@ async function refreshTreeForPath(anyPath) {
   }
 }
 
+// Remove a file or folder (and all paths under it) from recent files
+function removeFromRecentFileOrFolder(deletedPath) {
+  const normDel = normalizePath(deletedPath);
+  const recents = loadRecentFiles();
+  const filtered = recents.filter((p) => {
+    const n = normalizePath(p);
+    return n !== normDel && !n.startsWith(normDel + "/");
+  });
+  if (filtered.length === recents.length) return;
+  localStorage.setItem(RECENT_KEY, JSON.stringify(filtered));
+  const body = document.getElementById("recent-section-body");
+  if (body) requestAnimationFrame(() => renderRecentBody(body));
+}
+
+// Update paths in recent files when a file or folder is renamed/moved
+function updateRecentFileOrFolder(oldPath, newPath) {
+  const normOld = normalizePath(oldPath);
+  const normNew = normalizePath(newPath);
+  let changed = false;
+  const recents = loadRecentFiles().map((p) => {
+    const n = normalizePath(p);
+    if (n === normOld) { changed = true; return newPath; }
+    if (n.startsWith(normOld + "/")) { changed = true; return normNew + n.slice(normOld.length); }
+    return p;
+  });
+  if (!changed) return;
+  localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
+  const body = document.getElementById("recent-section-body");
+  if (body) requestAnimationFrame(() => renderRecentBody(body));
+}
+
 async function generateCopyPath(dirPath, baseName) {
   const dotIdx = baseName.lastIndexOf(".");
   const stem = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
@@ -745,6 +786,7 @@ async function handleDeleteFile(filePath) {
   if (!confirmed) return;
   try {
     await remove(filePath);
+    removeFromRecentFileOrFolder(filePath);
     showStatus(t("status.deleted", name));
     if (deps && deps.onFileDeleted && deps.getState && deps.getState().currentPath === filePath) {
       deps.onFileDeleted();
@@ -787,6 +829,7 @@ async function handleDeleteFolder(folderPath) {
   if (!confirmed) return;
   try {
     await remove(folderPath, { recursive: true });
+    removeFromRecentFileOrFolder(folderPath);
     showStatus(t("status.deleted", name));
     await refreshTreeForPath(folderPath);
   } catch (err) {
@@ -800,14 +843,23 @@ async function handlePaste(destDir) {
   const { op, srcPath, name } = clipboard;
   try {
     const destPath = await join(destDir, name);
+    if (await exists(destPath)) {
+      const confirmed = await ask(t("ctx.confirmOverwrite", name), {
+        title: t("ctx.overwrite"),
+        kind: "warning",
+        okLabel: t("ctx.overwrite"),
+        cancelLabel: t("new.cancel"),
+      });
+      if (!confirmed) return;
+    }
     if (op === "cut") {
       await rename(srcPath, destPath);
       clipboard = null;
+      updateRecentFileOrFolder(srcPath, destPath);
       if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === srcPath) {
         await deps.onFileRenamed(srcPath, destPath);
       }
       showStatus(t("status.moved", name));
-      // Refresh both source and dest trees
       await refreshTreeForPath(srcPath);
       await refreshTreeForPath(destPath);
     } else {
@@ -831,11 +883,18 @@ async function handleNewFileInFolder(folderPath) {
     }
     await writeTextFile(newPath, "");
     await refreshTreeForPath(newPath);
-    // Trigger inline rename after tree refresh
+    // Trigger inline rename after tree refresh; cancel deletes the empty file
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const el = findFileItemByPath(newPath);
-        if (el) triggerInlineRename(newPath, el);
+        if (el) triggerInlineRename(newPath, el, {
+          onCancel: async () => {
+            try {
+              await remove(newPath);
+              await refreshTreeForPath(newPath);
+            } catch { /* ignore */ }
+          },
+        });
       });
     });
   } catch (err) {
@@ -846,9 +905,10 @@ async function handleNewFileInFolder(folderPath) {
 
 // --- Mouse-based Drag & Drop ---
 
-function startFileDrag(e, srcPath, srcEl) {
+function startDrag(e, srcPath, srcEl, isFolder) {
   if (e.button !== 0) return;
-  dragState = { srcPath, startX: e.clientX, startY: e.clientY, ghost: null, active: false, srcEl };
+  e.preventDefault();
+  dragState = { srcPath, startX: e.clientX, startY: e.clientY, ghost: null, active: false, srcEl, isFolder };
   document.addEventListener("mousemove", onDragMouseMove);
   document.addEventListener("mouseup", onDragMouseUp);
 }
@@ -881,10 +941,17 @@ function onDragMouseMove(e) {
   if (el) {
     const folderLabel = el.closest(".file-tree-folder-label");
     const treeRoot = el.closest(".file-tree-root");
-    if (folderLabel) {
-      folderLabel.classList.add("drag-over");
+    const srcNorm = normalizePath(dragState.srcPath);
+    if (folderLabel && folderLabel.dataset.folderPath) {
+      const targetNorm = normalizePath(folderLabel.dataset.folderPath);
+      // Skip if dragging onto self or a descendant of the dragged folder
+      const isSelfOrChild = dragState.isFolder && (targetNorm === srcNorm || targetNorm.startsWith(srcNorm + "/"));
+      if (!isSelfOrChild) folderLabel.classList.add("drag-over");
     } else if (treeRoot) {
-      treeRoot.classList.add("drag-over");
+      const rootNorm = normalizePath(treeRoot.dataset.folder || "");
+      // Skip if the workspace root is the dragged folder itself
+      const isSelf = dragState.isFolder && rootNorm === srcNorm;
+      if (!isSelf) treeRoot.classList.add("drag-over");
     }
   }
 }
@@ -893,7 +960,7 @@ async function onDragMouseUp(e) {
   document.removeEventListener("mousemove", onDragMouseMove);
   document.removeEventListener("mouseup", onDragMouseUp);
   if (!dragState) return;
-  const { srcPath, active, ghost, srcEl } = dragState;
+  const { srcPath, active, ghost, srcEl, isFolder } = dragState;
   dragState = null;
   if (ghost) ghost.remove();
   srcEl.classList.remove("dragging");
@@ -901,6 +968,8 @@ async function onDragMouseUp(e) {
   document.body.classList.remove("dragging-file");
   clearDragOver();
   if (!active) return;
+  // Suppress the click that fires on mouseup on the same element
+  suppressNextClick = true;
   // Find drop target via hit-test
   const el = document.elementFromPoint(e.clientX, e.clientY);
   if (!el) return;
@@ -908,12 +977,12 @@ async function onDragMouseUp(e) {
   const fileItem = el.closest(".file-tree-item[data-path]");
   const treeRoot = el.closest(".file-tree-root[data-folder]");
   if (folderLabel) {
-    await handleDropMove(srcPath, folderLabel.dataset.folderPath);
+    await handleDropMove(srcPath, folderLabel.dataset.folderPath, isFolder);
   } else if (fileItem && normalizePath(fileItem.dataset.path) !== normalizePath(srcPath)) {
     const destDir = await dirname(fileItem.dataset.path);
-    await handleDropMove(srcPath, destDir);
+    await handleDropMove(srcPath, destDir, isFolder);
   } else if (treeRoot) {
-    await handleDropMove(srcPath, treeRoot.dataset.folder);
+    await handleDropMove(srcPath, treeRoot.dataset.folder, isFolder);
   }
 }
 
@@ -921,14 +990,30 @@ function clearDragOver() {
   document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
 }
 
-async function handleDropMove(srcPath, destDir) {
+async function handleDropMove(srcPath, destDir, isFolder = false) {
   try {
+    const normSrc = normalizePath(srcPath);
+    const normDest = normalizePath(destDir);
+    // Prevent circular move (folder into itself or a descendant)
+    if (isFolder && (normDest === normSrc || normDest.startsWith(normSrc + "/"))) {
+      showStatus(t("ctx.circularMove"));
+      return;
+    }
     const srcDir = normalizePath(await dirname(srcPath));
-    const destDirNorm = normalizePath(destDir);
-    if (srcDir === destDirNorm) return; // same folder, skip
+    if (srcDir === normDest) return; // same folder, skip
     const name = srcPath.split(/[\\/]/).pop();
     const destPath = await join(destDir, name);
+    if (await exists(destPath)) {
+      const confirmed = await ask(t("ctx.confirmOverwrite", name), {
+        title: t("ctx.overwrite"),
+        kind: "warning",
+        okLabel: t("ctx.overwrite"),
+        cancelLabel: t("new.cancel"),
+      });
+      if (!confirmed) return;
+    }
     await rename(srcPath, destPath);
+    updateRecentFileOrFolder(srcPath, destPath);
     if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === srcPath) {
       await deps.onFileRenamed(srcPath, destPath);
     }
@@ -961,7 +1046,7 @@ function findFolderLabelByPath(folderPath) {
 
 // --- Inline Rename ---
 
-function triggerInlineRename(filePath, btn) {
+function triggerInlineRename(filePath, btn, { onCancel } = {}) {
   const nameSpan = btn.querySelector(".file-tree-name");
   if (!nameSpan) return;
 
@@ -996,6 +1081,7 @@ function triggerInlineRename(filePath, btn) {
       const dir = await dirname(filePath);
       const newPath = await join(dir, newName);
       await rename(filePath, newPath);
+      updateRecentFileOrFolder(filePath, newPath);
       if (deps && deps.onFileRenamed && deps.getState && deps.getState().currentPath === filePath) {
         await deps.onFileRenamed(filePath, newPath);
       }
@@ -1013,6 +1099,7 @@ function triggerInlineRename(filePath, btn) {
     committed = true;
     input.replaceWith(nameSpan);
     btn.style.pointerEvents = "";
+    if (onCancel) onCancel();
   }
 
   input.addEventListener("keydown", (e) => {
@@ -1049,6 +1136,7 @@ function triggerFolderInlineRename(folderPath, label) {
       const dir = await dirname(folderPath);
       const newPath = await join(dir, newName);
       await rename(folderPath, newPath);
+      updateRecentFileOrFolder(folderPath, newPath);
       // Migrate localStorage collapse key
       const oldKey = `sokki-folder-collapsed-${folderPath}`;
       const newKey = `sokki-folder-collapsed-${newPath}`;
