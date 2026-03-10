@@ -222,11 +222,9 @@ function initResizeHandle(handle) {
       const delta = startY - e.clientY; // drag up = increase height
       const newHeight = Math.min(maxHeight, Math.max(RECENT_HEIGHT_MIN, startHeight + delta));
       recentArea.style.height = `${newHeight}px`;
-      // Pass count directly — avoids any DOM measurement during drag
-      if (recentBody) {
-        const count = Math.floor((newHeight - headerH) / itemH);
-        renderRecentBody(recentBody, count);
-      }
+      // Render all items; overflow:hidden clips what doesn't fit.
+      // No count calculation needed — maxHeight already prevents excess space.
+      if (recentBody) renderRecentBody(recentBody, recentCount);
     };
 
     const onMouseUp = () => {
