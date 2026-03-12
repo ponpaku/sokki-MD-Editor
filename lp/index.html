@@ -3,8 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary Meta -->
     <title>Marka - 思考を止めない、流れるようなMarkdownエディター</title>
-    <meta name="description" content="速記に特化したシンプルで高速な Markdown エディター (Powered by Tauri v2)">
+    <meta name="description" content="速記に特化したシンプルで高速な Markdown エディター。Tauri v2 製のネイティブアプリで、起動が速く、軽量。Windows / macOS 対応。">
+    <link rel="canonical" href="https://marka-8pn.pages.dev/">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="./icon.png">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://marka-8pn.pages.dev/">
+    <meta property="og:title" content="Marka - 思考を止めない、流れるようなMarkdownエディター">
+    <meta property="og:description" content="速記に特化したシンプルで高速な Markdown エディター。Tauri v2 製のネイティブアプリで、起動が速く、軽量。Windows / macOS 対応。">
+    <meta property="og:image" content="https://marka-8pn.pages.dev/screenshot.png">
+    <meta property="og:locale" content="ja_JP">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Marka - 思考を止めない、流れるようなMarkdownエディター">
+    <meta name="twitter:description" content="速記に特化したシンプルで高速な Markdown エディター。Tauri v2 製のネイティブアプリで、起動が速く、軽量。Windows / macOS 対応。">
+    <meta name="twitter:image" content="https://marka-8pn.pages.dev/screenshot.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -34,7 +55,7 @@
     <!-- ヒーローセクション -->
     <header class="hero-bg border-b border-gray-200 min-h-screen flex items-center pt-16">
         <div class="max-w-5xl mx-auto px-6 py-12 text-center flex flex-col items-center w-full">
-            <img src="./icon.png" alt="Marka Logo" class="mx-auto w-32 h-32 md:w-40 md:h-40 rounded-3xl shadow-xl mb-8 transform transition hover:scale-105 duration-300">
+            <img src="./icon.png" alt="Marka Logo" class="mx-auto w-32 h-32 md:w-40 md:h-40 mb-8 transform transition hover:scale-105 duration-300">
 
             <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 text-gradient">Marka</h1>
             <p class="text-xl md:text-2xl text-gray-600 mb-10 font-medium max-w-2xl mx-auto leading-relaxed">
@@ -58,7 +79,7 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
-            <!-- 特徴1 (青色) -->
+            <!-- 特徴1 -->
             <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition group text-center">
                 <div class="w-16 h-16 mx-auto bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-blue-600 group-hover:text-white transition duration-300">
                     <i class="fa-solid fa-pen-nib"></i>
@@ -69,7 +90,7 @@
                 </p>
             </div>
 
-            <!-- 特徴2 (緑色) -->
+            <!-- 特徴2 -->
             <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition group text-center">
                 <div class="w-16 h-16 mx-auto bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-emerald-600 group-hover:text-white transition duration-300">
                     <i class="fa-solid fa-feather-pointed"></i>
@@ -80,7 +101,7 @@
                 </p>
             </div>
 
-            <!-- 特徴3 (紫色) -->
+            <!-- 特徴3 -->
             <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition group text-center">
                 <div class="w-16 h-16 mx-auto bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-purple-600 group-hover:text-white transition duration-300">
                     <i class="fa-brands fa-markdown"></i>
@@ -90,6 +111,15 @@
                     タイピングしながらシームレスに書式を適用。キーボードから手を離さずに、美しいドキュメントを構築できます。
                 </p>
             </div>
+        </div>
+    </section>
+
+    <!-- スクリーンショットセクション -->
+    <section class="bg-white border-t border-b border-gray-100 py-20">
+        <div class="max-w-5xl mx-auto px-6 text-center">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">シンプルで、美しい。</h2>
+            <p class="text-gray-600 mb-12">エディターとプレビューが並ぶ、直感的なレイアウト。</p>
+            <img src="./screenshot.png" alt="Marka スクリーンショット" class="mx-auto rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl">
         </div>
     </section>
 
@@ -129,7 +159,7 @@
     <footer class="bg-gray-950 text-gray-500 py-10 text-center">
         <div class="max-w-5xl mx-auto px-6">
             <div class="flex justify-center items-center gap-2 mb-4">
-                <img src="./icon.png" alt="Marka Logo" class="w-6 h-6 rounded-md">
+                <img src="./icon.png" alt="Marka Logo" class="w-6 h-6">
                 <span class="font-bold text-gray-300 tracking-wide">Marka</span>
             </div>
             <p class="mb-2 text-sm">Developed by <a href="https://github.com/ponpaku" target="_blank" class="text-gray-400 hover:text-white transition">ponpaku</a></p>
