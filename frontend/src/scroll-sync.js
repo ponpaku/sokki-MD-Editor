@@ -120,8 +120,13 @@ function getEditorSegmentY(editor, segment) {
   };
 }
 
+function normalizeScrollTop(pane, value) {
+  const maxScrollTop = Math.max(0, pane.scrollHeight - pane.clientHeight);
+  return clamp(Math.round(value), 0, maxScrollTop);
+}
+
 function shouldApplyScroll(currentTop, nextTop) {
-  return Math.abs(currentTop - nextTop) >= 6;
+  return Math.abs(Math.round(currentTop) - Math.round(nextTop)) >= 2;
 }
 
 export function createScrollSync({ editor, preview, getSegments }) {
@@ -131,9 +136,9 @@ export function createScrollSync({ editor, preview, getSegments }) {
   let pendingEditorFrame = 0;
   let pendingPreviewFrame = 0;
   let pendingEditorMode = "scroll";
-  const animations = {
-    editor: { frame: 0, target: null },
-    preview: { frame: 0, target: null },
+  const paneAnimations = {
+    editor: { frame: 0, startTop: 0, targetTop: 0, startedAt: 0, duration: 0 },
+    preview: { frame: 0, startTop: 0, targetTop: 0, startedAt: 0, duration: 0 },
   };
 
   function setPaneScrollTop(pane, value) {
@@ -154,50 +159,61 @@ export function createScrollSync({ editor, preview, getSegments }) {
     }
   }
 
-  function stopAnimation(pane) {
-    const animation = animations[pane];
+  function stopPaneAnimation(pane) {
+    const animation = paneAnimations[pane];
     if (animation.frame) {
       cancelAnimationFrame(animation.frame);
       animation.frame = 0;
     }
-    animation.target = null;
-    clearIgnoredPane(pane);
   }
 
   function setPaneScrollImmediate(pane, nextTop) {
-    stopAnimation(pane);
+    const targetPane = pane === "editor" ? editor : preview;
+    const normalizedTop = normalizeScrollTop(targetPane, nextTop);
+    stopPaneAnimation(pane);
+    if (!shouldApplyScroll(getPaneScrollTop(pane), normalizedTop)) {
+      clearIgnoredPane(pane);
+      return;
+    }
     ignoredPane = pane;
-    setPaneScrollTop(pane, nextTop);
+    setPaneScrollTop(pane, normalizedTop);
     requestAnimationFrame(() => {
       clearIgnoredPane(pane);
     });
   }
 
-  function animatePaneScroll(pane, nextTop, { smoothTarget = false } = {}) {
-    const animation = animations[pane];
-    if (smoothTarget && animation.target != null) {
-      animation.target += (nextTop - animation.target) * 0.35;
-    } else {
-      animation.target = nextTop;
+  function animatePaneScroll(pane, nextTop, duration = 140) {
+    const targetPane = pane === "editor" ? editor : preview;
+    const normalizedTop = normalizeScrollTop(targetPane, nextTop);
+    if (!shouldApplyScroll(getPaneScrollTop(pane), normalizedTop)) {
+      stopPaneAnimation(pane);
+      clearIgnoredPane(pane);
+      return;
     }
-    ignoredPane = pane;
-    if (animation.frame) return;
 
-    const step = () => {
-      const currentTop = getPaneScrollTop(pane);
-      const diff = (animation.target ?? currentTop) - currentTop;
-      if (Math.abs(diff) < 1.5) {
-        setPaneScrollTop(pane, animation.target ?? currentTop);
+    const animation = paneAnimations[pane];
+    stopPaneAnimation(pane);
+    animation.startTop = getPaneScrollTop(pane);
+    animation.targetTop = normalizedTop;
+    animation.startedAt = performance.now();
+    animation.duration = duration;
+    ignoredPane = pane;
+
+    const step = (now) => {
+      const elapsed = now - animation.startedAt;
+      const progress = clamp(elapsed / animation.duration, 0, 1);
+      const eased = 1 - (1 - progress) * (1 - progress);
+      const nextValue = animation.startTop + (animation.targetTop - animation.startTop) * eased;
+      setPaneScrollTop(pane, normalizeScrollTop(targetPane, nextValue));
+
+      if (progress >= 1) {
         animation.frame = 0;
-        animation.target = null;
         requestAnimationFrame(() => {
           clearIgnoredPane(pane);
         });
         return;
       }
 
-      const delta = Math.sign(diff) * Math.min(52, Math.max(4, Math.abs(diff) * 0.18));
-      setPaneScrollTop(pane, currentTop + delta);
       animation.frame = requestAnimationFrame(step);
     };
 
@@ -206,7 +222,8 @@ export function createScrollSync({ editor, preview, getSegments }) {
 
   function setActivePane(nextPane) {
     activePane = nextPane;
-    stopAnimation(nextPane);
+    stopPaneAnimation(nextPane);
+    clearIgnoredPane(nextPane);
   }
 
   function refreshPreviewMap() {
@@ -243,14 +260,11 @@ export function createScrollSync({ editor, preview, getSegments }) {
     const progress = clamp((anchorDocY - editorY.start) / editorY.height, 0, 1);
     const targetDocY = previewY.top + previewY.height * progress;
     const nextScrollTop = Math.max(0, targetDocY - viewportOffset);
-
-    if (!shouldApplyScroll(preview.scrollTop, nextScrollTop)) return;
-
     if (mode === "selection") {
-      setPaneScrollImmediate("preview", nextScrollTop);
-    } else {
-      animatePaneScroll("preview", nextScrollTop, { smoothTarget: true });
+      animatePaneScroll("preview", nextScrollTop, 150);
+      return;
     }
+    setPaneScrollImmediate("preview", nextScrollTop);
   }
 
   function syncPreviewToEditor() {
@@ -286,10 +300,7 @@ export function createScrollSync({ editor, preview, getSegments }) {
     const progress = clamp((centerDocY - windowMeasure.top) / windowMeasure.height, 0, 1);
     const targetDocY = editorY.start + editorY.height * progress;
     const nextScrollTop = Math.max(0, targetDocY - editor.clientHeight / 2);
-
-    if (!shouldApplyScroll(editor.scrollTop, nextScrollTop)) return;
-
-    animatePaneScroll("editor", nextScrollTop, { smoothTarget: true });
+    setPaneScrollImmediate("editor", nextScrollTop);
   }
 
   function scheduleFromEditor(mode = "scroll") {
