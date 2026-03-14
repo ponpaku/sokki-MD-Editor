@@ -9,6 +9,8 @@ const dictionaries = {
     "sidebar.toggleTitle": "Toggle Sidebar",
     // editor
     "editor.placeholder": "Type here...",
+    "footer.search": "Search",
+    "footer.charCount": "{0} chars",
     // status
     "status.ready": "Ready",
     "status.opened": "Opened: {0}",
@@ -179,6 +181,8 @@ const dictionaries = {
     "sidebar.toggleTitle": "サイドバーを切替",
     // editor
     "editor.placeholder": "ここに入力...",
+    "footer.search": "検索",
+    "footer.charCount": "{0} 文字",
     // status
     "status.ready": "準備完了",
     "status.opened": "開きました: {0}",
@@ -343,6 +347,29 @@ const dictionaries = {
 
 let currentLang = "en";
 
+const codeMirrorPhrases = {
+  ja: {
+    Find: "検索",
+    Replace: "置換",
+    next: "次へ",
+    previous: "前へ",
+    all: "全選択",
+    "match case": "大/小文字",
+    regexp: "正規表現",
+    "by word": "単語一致",
+    replace: "置換",
+    "replace all": "すべて置換",
+    close: "閉じる",
+    "current match": "現在の一致",
+    "on line": "行",
+    "Go to line": "行へ移動",
+    go: "移動",
+    "replaced match on line $": "$ 行目の一致を置換しました",
+    "replaced $ matches": "$ 件を置換しました",
+    "Control character": "制御文字",
+  },
+};
+
 function detectLang() {
   const stored = localStorage.getItem("marka-lang");
   if (stored && dictionaries[stored]) return stored;
@@ -353,6 +380,10 @@ currentLang = detectLang();
 
 export function getLang() {
   return currentLang;
+}
+
+export function getCodeMirrorPhrases() {
+  return codeMirrorPhrases[currentLang] || {};
 }
 
 export function t(key, ...args) {

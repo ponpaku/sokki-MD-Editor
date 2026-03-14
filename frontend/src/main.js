@@ -48,6 +48,8 @@ const exportPdfBtn = document.getElementById("export-pdf");
 const exportHtmlBtn = document.getElementById("export-html");
 const exportPrintBtn = document.getElementById("export-print");
 const editorPane = document.getElementById("editor-pane");
+const btnSearch = document.getElementById("btn-search");
+const editorCharCount = document.getElementById("editor-char-count");
 
 let scrollSync = null;
 let currentPreviewSegments = [];
@@ -67,9 +69,15 @@ function updateEditorPlaceholderState() {
   editorPane.dataset.hasContent = editor.value.length > 0 ? "true" : "false";
 }
 
+function updateEditorFooter() {
+  if (!editorCharCount) return;
+  editorCharCount.textContent = t("footer.charCount", editor.value.length.toLocaleString());
+}
+
 const editor = createEditorAdapter(editorHost, {
   onUpdate(update) {
     updateEditorPlaceholderState();
+    updateEditorFooter();
     if (!scrollSync) return;
     if (update.selectionSet && !update.docChanged) {
       scrollSync.setActivePane("editor");
@@ -1282,6 +1290,10 @@ btnNew.addEventListener("click", handleNew);
 btnOpen.addEventListener("click", handleOpen);
 btnSave.addEventListener("click", handleSave);
 btnSaveAs.addEventListener("click", handleSaveAs);
+btnSearch?.addEventListener("click", () => {
+  editor.openSearch();
+  editor.focus();
+});
 
 // --- Export Dropdown ---
 btnExport.addEventListener("click", (e) => {
@@ -1582,6 +1594,7 @@ listen("file-open", (event) => {
 // --- Startup: restore snapshot if available ---
 async function init() {
   applyTranslations();
+  updateEditorFooter();
   renderHelp();
   loadSavedStyle();
   initPreviewStylePanel();

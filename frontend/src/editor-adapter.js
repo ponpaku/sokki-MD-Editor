@@ -1,6 +1,8 @@
 import { EditorState, Transaction } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
+import { openSearchPanel, closeSearchPanel, search, searchKeymap } from "@codemirror/search";
+import { getCodeMirrorPhrases } from "./i18n.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -9,6 +11,23 @@ function clamp(value, min, max) {
 export function createEditorAdapter(host, { onUpdate } = {}) {
   const domListeners = new Map();
   let view = null;
+
+  const toggleSearchPanel = (v) => {
+    if (v.dom.querySelector(".cm-search")) {
+      closeSearchPanel(v);
+    } else {
+      openSearchPanel(v);
+    }
+    return true;
+  };
+
+  const openReplacePanel = (v) => {
+    openSearchPanel(v);
+    requestAnimationFrame(() => {
+      v.dom.querySelector('.cm-search input[name="replace"]')?.focus();
+    });
+    return true;
+  };
 
   function dispatchDomEvent(type, event) {
     const listeners = domListeners.get(type);
@@ -53,7 +72,15 @@ export function createEditorAdapter(host, { onUpdate } = {}) {
       doc: "",
       extensions: [
         markdown(),
+        EditorState.phrases.of(getCodeMirrorPhrases()),
+        lineNumbers(),
         EditorView.lineWrapping,
+        search({ top: true }),
+        keymap.of([
+          { key: "Mod-f", run: toggleSearchPanel },
+          { key: "Mod-h", run: openReplacePanel },
+          ...searchKeymap,
+        ]),
         domBridge,
         EditorView.updateListener.of((update) => {
           if (typeof onUpdate === "function") {
@@ -71,6 +98,9 @@ export function createEditorAdapter(host, { onUpdate } = {}) {
     contentDOM: view.contentDOM,
     focus() {
       view.focus();
+    },
+    openSearch() {
+      toggleSearchPanel(view);
     },
     addEventListener(type, listener, options) {
       if (type === "scroll") {
@@ -140,6 +170,9 @@ export function createEditorAdapter(host, { onUpdate } = {}) {
     scrollToAbsoluteY(docY, viewportOffset = 0) {
       const nextTop = Math.max(0, docY - viewportOffset);
       view.scrollDOM.scrollTop = nextTop;
+    },
+    getLineCount() {
+      return view.state.doc.lines;
     },
   };
 
