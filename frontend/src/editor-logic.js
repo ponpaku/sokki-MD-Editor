@@ -115,12 +115,12 @@ export function isCoalescibleNativeEditType(inputType) {
   return true;
 }
 
-export function shouldCoalesceNativeEdit(previousGroup, inputType, deltaMs) {
+export function shouldCoalesceNativeEdit(previousGroup, inputType, deltaMs, maxWindowMs = 600) {
   return (
     !!previousGroup &&
     previousGroup.inputType === inputType &&
     isCoalescibleNativeEditType(inputType) &&
-    deltaMs <= 600
+    deltaMs <= maxWindowMs
   );
 }
 
