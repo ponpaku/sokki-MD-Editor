@@ -40,6 +40,8 @@ const dictionaries = {
     "new.confirmTitle": "Discard Changes?",
     "new.confirmMessage": "You have unsaved changes. Discard and create a new file?",
     "new.ok": "Discard and New",
+    "open.confirmMessage": "You have unsaved changes. Discard and open another file?",
+    "open.ok": "Discard and Open",
     "new.cancel": "Cancel",
     // sidebar
     "sidebar.files": "Files",
@@ -225,6 +227,8 @@ const dictionaries = {
     "new.confirmTitle": "変更を破棄しますか？",
     "new.confirmMessage": "未保存の変更があります。破棄して新規作成しますか？",
     "new.ok": "破棄して新規作成",
+    "open.confirmMessage": "未保存の変更があります。破棄して他のファイルを開きますか？",
+    "open.ok": "破棄して開く",
     "new.cancel": "キャンセル",
     // sidebar
     "sidebar.files": "ファイル",

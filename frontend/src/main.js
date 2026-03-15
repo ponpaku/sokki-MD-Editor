@@ -1464,19 +1464,19 @@ function handleEnterKey(e) {
 
 // --- Shared: confirm before discarding unsaved changes ---
 // Returns true if safe to proceed (no unsaved changes, or user confirmed discard).
-async function confirmDiscard() {
+async function confirmDiscard(action = "new") {
   if (!state.dirty) return true;
-  return await ask(t("new.confirmMessage"), {
+  return await ask(t(`${action}.confirmMessage`), {
     title: t("new.confirmTitle"),
     kind: "warning",
-    okLabel: t("new.ok"),
+    okLabel: t(`${action}.ok`),
     cancelLabel: t("new.cancel"),
   });
 }
 
 // --- New File ---
 async function handleNew() {
-  if (!await confirmDiscard()) return;
+  if (!await confirmDiscard("new")) return;
   await stopWatching();
   editor.value = "";
   state.currentPath = null;
@@ -1507,6 +1507,7 @@ async function handleOpen() {
   try {
     const result = await actionOpen();
     if (!result) return;
+    if (!await confirmDiscard("open")) return;
     state.currentPath = result.path;
     state.lastSavedAt = Date.now();
     editor.value = result.text;
@@ -1916,7 +1917,8 @@ async function openFileFromPath(filePath) {
 }
 
 // --- Listen for file-open events from backend (single-instance) ---
-listen("file-open", (event) => {
+listen("file-open", async (event) => {
+  if (!await confirmDiscard("open")) return;
   openFileFromPath(event.payload);
 });
 
@@ -1935,7 +1937,7 @@ async function init() {
     getEditor: () => editor,
     getState: () => state,
     openFile: async (filePath) => {
-      if (!await confirmDiscard()) return;
+      if (!await confirmDiscard("open")) return;
       await openFileFromPath(filePath);
     },
     setStatus: (msg) => setStatus(msg),
