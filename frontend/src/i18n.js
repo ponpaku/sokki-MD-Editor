@@ -452,6 +452,10 @@ function kbd(text) {
   return `<kbd>${text}</kbd>`;
 }
 
+const isMac = typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const modKey = isMac ? "⌘" : "Ctrl";
+
 export function renderHelp() {
   const panel = document.getElementById("help-panel");
   if (!panel) return;
@@ -473,15 +477,15 @@ export function renderHelp() {
       items: [
         { label: t("help.indent"), desc: t("help.indentDesc", kbd("Tab")) },
         { label: t("help.outdent"), desc: t("help.outdentDesc", kbd("Shift") + " + " + kbd("Tab")) },
-        { label: t("help.listToggle"), desc: t("help.listToggleDesc", kbd("Ctrl"), kbd("Shift"), kbd("7")) },
-        { label: t("help.listAutoFormat"), desc: t("help.listAutoFormatDesc", kbd("Ctrl"), kbd("Shift"), kbd("L")) },
+        { label: t("help.listToggle"), desc: t("help.listToggleDesc", kbd(modKey), kbd("Shift"), kbd("7")) },
+        { label: t("help.listAutoFormat"), desc: t("help.listAutoFormatDesc", kbd(modKey), kbd("Shift"), kbd("L")) },
       ],
     },
     {
       title: t("help.groupTable"),
       items: [
-        { label: t("help.tableCol"), desc: t("help.tableColDesc", kbd("Ctrl") + " + " + kbd(".")) },
-        { label: t("help.tableRowAdd"), desc: t("help.tableRowAddDesc", kbd("Ctrl"), kbd("Enter")) },
+        { label: t("help.tableCol"), desc: t("help.tableColDesc", kbd(modKey) + " + " + kbd(".")) },
+        { label: t("help.tableRowAdd"), desc: t("help.tableRowAddDesc", kbd(modKey), kbd("Enter")) },
         { label: t("help.tableCellMove"), desc: t("help.tableCellMoveDesc", kbd("Tab"), kbd("Shift") + " + " + kbd("Tab")) },
         { label: t("help.tableRowDelete"), desc: t("help.tableRowDeleteDesc", kbd("Backspace")) },
       ],
@@ -489,19 +493,19 @@ export function renderHelp() {
     {
       title: t("help.groupFormat"),
       items: [
-        { label: t("help.bold"), desc: kbd("Ctrl") + " + " + kbd("B") },
-        { label: t("help.italic"), desc: kbd("Ctrl") + " + " + kbd("I") },
-        { label: t("help.underline"), desc: kbd("Ctrl") + " + " + kbd("U") },
+        { label: t("help.bold"), desc: kbd(modKey) + " + " + kbd("B") },
+        { label: t("help.italic"), desc: kbd(modKey) + " + " + kbd("I") },
+        { label: t("help.underline"), desc: kbd(modKey) + " + " + kbd("U") },
       ],
     },
     {
       title: t("help.groupApp"),
       items: [
-        { label: t("help.undo"), desc: kbd("Ctrl") + " + " + kbd("Z") },
-        { label: t("help.redo"), desc: kbd("Ctrl") + " + " + kbd("Shift") + " + " + kbd("Z") + " / " + kbd("Ctrl") + " + " + kbd("Y") },
-        { label: t("help.fileOpen"), desc: kbd("Ctrl") + " + " + kbd("O") },
-        { label: t("help.fileSave"), desc: kbd("Ctrl") + " + " + kbd("S") },
-        { label: t("help.fileSaveAs"), desc: kbd("Ctrl") + " + " + kbd("Shift") + " + " + kbd("S") },
+        { label: t("help.undo"), desc: kbd(modKey) + " + " + kbd("Z") },
+        { label: t("help.redo"), desc: kbd(modKey) + " + " + kbd("Shift") + " + " + kbd("Z") + " / " + kbd(modKey) + " + " + kbd("Y") },
+        { label: t("help.fileOpen"), desc: kbd(modKey) + " + " + kbd("O") },
+        { label: t("help.fileSave"), desc: kbd(modKey) + " + " + kbd("S") },
+        { label: t("help.fileSaveAs"), desc: kbd(modKey) + " + " + kbd("Shift") + " + " + kbd("S") },
       ],
     },
   ];

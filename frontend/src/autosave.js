@@ -4,7 +4,7 @@ import {
   exists,
   mkdir,
 } from "@tauri-apps/plugin-fs";
-import { appDataDir } from "@tauri-apps/api/path";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n.js";
 
@@ -24,7 +24,7 @@ async function getBasePath() {
 
 async function ensureDir() {
   const base = await getBasePath();
-  const dir = `${base}${AUTOSAVE_DIR}`;
+  const dir = await join(base, AUTOSAVE_DIR);
   if (!(await exists(dir))) {
     await mkdir(dir, { recursive: true });
   }
@@ -34,9 +34,9 @@ async function ensureDir() {
 export async function saveSnapshot(text, currentPath) {
   try {
     const dir = await ensureDir();
-    await writeTextFile(`${dir}\\${AUTOSAVE_FILE}`, text);
+    await writeTextFile(await join(dir, AUTOSAVE_FILE), text);
     await writeTextFile(
-      `${dir}\\${AUTOSAVE_META}`,
+      await join(dir, AUTOSAVE_META),
       JSON.stringify({
         currentPath: currentPath || null,
         savedAt: Date.now(),
@@ -63,8 +63,8 @@ export function scheduleSave(text, currentPath) {
 export async function clearSnapshot() {
   try {
     const dir = await ensureDir();
-    await writeTextFile(`${dir}\\${AUTOSAVE_FILE}`, "");
-    await writeTextFile(`${dir}\\${AUTOSAVE_META}`, "{}");
+    await writeTextFile(await join(dir, AUTOSAVE_FILE), "");
+    await writeTextFile(await join(dir, AUTOSAVE_META), "{}");
   } catch {
     // ignore
   }
@@ -73,8 +73,8 @@ export async function clearSnapshot() {
 export async function checkRestore() {
   try {
     const dir = await ensureDir();
-    const snapshotPath = `${dir}\\${AUTOSAVE_FILE}`;
-    const metaPath = `${dir}\\${AUTOSAVE_META}`;
+    const snapshotPath = await join(dir, AUTOSAVE_FILE);
+    const metaPath = await join(dir, AUTOSAVE_META);
 
     if (!(await exists(snapshotPath))) return null;
 
