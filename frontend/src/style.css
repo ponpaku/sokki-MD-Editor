@@ -1,6 +1,8 @@
 /* --- Theme Definitions --- */
 [data-theme="light"], :root {
     --editor-font-size: 16px;
+    --editor-font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    --preview-font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     --app-footer-height: 34px;
     --bg-header: #333;
     --fg-header: #fff;
@@ -241,7 +243,7 @@ header {
 
 #editor .cm-scroller {
     overflow: auto;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--editor-font-family);
     font-size: var(--editor-font-size);
     line-height: 1.6;
 }
@@ -593,6 +595,7 @@ header {
     overflow-y: auto;
     background-color: var(--bg-preview);
     color: var(--fg-preview);
+    font-family: var(--preview-font-family);
     line-height: 1.6;
 }
 

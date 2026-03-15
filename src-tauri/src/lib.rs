@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{process::Command, sync::Mutex};
 use tauri::{Emitter, Manager};
 use pulldown_cmark::{html, Options, Parser};
 
@@ -35,6 +35,42 @@ fn render_markdown(markdown: String) -> String {
     html_output
 }
 
+#[tauri::command]
+fn get_installed_fonts() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Add-Type -AssemblyName System.Drawing; [System.Drawing.Text.InstalledFontCollection]::new().Families | ForEach-Object { $_.Name } | Sort-Object -Unique",
+            ])
+            .output()
+            .map_err(|err| format!("failed to enumerate fonts: {err}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("font enumeration failed: {}", stderr.trim()));
+        }
+
+        let mut fonts: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        fonts.sort_unstable();
+        fonts.dedup();
+        return Ok(fonts);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -53,7 +89,11 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(InitialFile(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![get_initial_file, render_markdown])
+        .invoke_handler(tauri::generate_handler![
+            get_initial_file,
+            render_markdown,
+            get_installed_fonts
+        ])
         .setup(|app| {
             let args: Vec<String> = std::env::args().collect();
             if let Some(path) = find_md_arg(&args) {

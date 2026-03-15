@@ -59,6 +59,7 @@ const btnSearch = document.getElementById("btn-search");
 const editorCharCount = document.getElementById("editor-char-count");
 const settingsModal = document.getElementById("settings-modal");
 const settingsClose = document.getElementById("settings-close");
+const settingsDisplayFont = document.getElementById("settings-display-font");
 const settingsFontSize = document.getElementById("settings-font-size");
 const settingsFontSizeValue = document.getElementById("settings-font-size-value");
 const settingsLanguage = document.getElementById("settings-language");
@@ -70,6 +71,7 @@ let currentPreviewSegments = [];
 let suppressEditorSyncUntil = 0;
 let lastPreviewHtml = "";
 let appSettings = loadSettings();
+let availableDisplayFonts = [];
 let exportModulePromise = null;
 let exportModalPromise = null;
 let scheduledPreviewTimeout = 0;
@@ -140,7 +142,47 @@ function updateEditorFooter() {
   editorCharCount.textContent = t("footer.charCount", editor.value.length.toLocaleString());
 }
 
+function toCssFontStack(fontName, fallback = "sans-serif") {
+  if (typeof fontName !== "string" || fontName.trim().length === 0) {
+    return fallback;
+  }
+  const escaped = fontName.trim().replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}", ${fallback}`;
+}
+
+function renderDisplayFontOptions() {
+  if (!settingsDisplayFont) return;
+
+  const fonts = Array.from(new Set([appSettings.displayFont, ...availableDisplayFonts]))
+    .filter((font) => typeof font === "string" && font.trim().length > 0)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  settingsDisplayFont.replaceChildren();
+  for (const font of fonts) {
+    const option = document.createElement("option");
+    option.value = font;
+    option.textContent = font;
+    settingsDisplayFont.append(option);
+  }
+
+  settingsDisplayFont.value = appSettings.displayFont;
+}
+
+async function loadInstalledFonts() {
+  try {
+    const fonts = await invoke("get_installed_fonts");
+    availableDisplayFonts = Array.isArray(fonts)
+      ? fonts.filter((font) => typeof font === "string" && font.trim().length > 0)
+      : [];
+  } catch (err) {
+    console.error("Failed to load installed fonts:", err);
+    availableDisplayFonts = [];
+  }
+  renderDisplayFontOptions();
+}
+
 function syncSettingsControls() {
+  renderDisplayFontOptions();
   if (settingsFontSize) settingsFontSize.value = String(appSettings.fontSize);
   if (settingsFontSizeValue) settingsFontSizeValue.textContent = `${appSettings.fontSize}px`;
   if (settingsLanguage) settingsLanguage.value = appSettings.uiLanguage;
@@ -168,6 +210,8 @@ function applySettings(nextSettings, { persist = true } = {}) {
   editor.setPhrases(getCodeMirrorPhrases());
   editor.setLineNumbersVisible(appSettings.showLineNumbers);
   editor.setLineWrappingEnabled(appSettings.lineWrapping);
+  document.documentElement.style.setProperty("--editor-font-family", toCssFontStack(appSettings.displayFont, "monospace"));
+  document.documentElement.style.setProperty("--preview-font-family", toCssFontStack(appSettings.displayFont, "sans-serif"));
   document.documentElement.style.setProperty("--editor-font-size", `${appSettings.fontSize}px`);
   syncSettingsControls();
 
@@ -544,6 +588,10 @@ settingsFontSize?.setAttribute("max", String(FONT_SIZE_RANGE.max));
 
 settingsFontSize?.addEventListener("input", (e) => {
   applySettings({ fontSize: Number.parseInt(e.currentTarget.value, 10) });
+});
+
+settingsDisplayFont?.addEventListener("change", (e) => {
+  applySettings({ displayFont: e.currentTarget.value });
 });
 
 settingsLanguage?.addEventListener("change", (e) => {
@@ -1875,6 +1923,7 @@ listen("file-open", (event) => {
 // --- Startup: restore snapshot if available ---
 async function init() {
   applySettings(appSettings, { persist: false });
+  await loadInstalledFonts();
   applyTranslations();
   updateEditorFooter();
   renderHelp();
